@@ -85,6 +85,7 @@ def process_fastq(args):
     umi_length = len(args.umi)
     with nopen(fastq) as fq:
         for label, seq, qual in read_fastq(fq):
+            # TODO: add 3' support
             umi = seq[:umi_length]
             if valid_umi(args.umi, umi):
                 print "@%s:UMI_%s\n%s\n+\n%s" % \
