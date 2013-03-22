@@ -2,6 +2,8 @@
 
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 
+Right now, this only handles UMIs at the 5' end ([READ][UMI]).
+
 ## Trim the UMI
 
 Incorporate the UMI into the read sequence in order to later identify among mapped reads.
