@@ -2,7 +2,8 @@
 
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 
-Right now, this only handles UMIs at the 5' end ([READ][UMI]).
+Right now, this only handles UMIs at the 3' end ([READ][UMI]). Support will be 
+added soon for 5' UMIs.
 
 ## Trim the UMI
 
