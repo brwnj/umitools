@@ -13,10 +13,10 @@ umitools trim --end 5 unprocessed_fastq NNNNNV > out.fq
 
 For any given start site, save only one read per UMI.
 ```
-umitools rmdup unprocess.bam out.bam
+umitools rmdup unprocess.bam out.bam NNNNNV
 ```
 
-#Requirements
+##Requires
 
 + pysam
 + toolshed
