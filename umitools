@@ -55,11 +55,11 @@ def process_bam(args):
                 except KeyError:
                     unique_reads[umi] = read
             else:
-                [bam.write(r) for u, r in unique_reads.iteritems()]
+                [bam.write(r) for r in unique_reads.itervalues()]
                 unique_reads = {}
                 unique_reads[umi] = read
                 pos = read.pos
-        [bam.write(r) for u, r in unique_reads.iteritems()]
+        [bam.write(r) for r in unique_reads.itervalues()]
 
 def read_fastq(fh):
     """fastq parser that returns name, seq, and qual."""
