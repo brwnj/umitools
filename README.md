@@ -13,7 +13,7 @@ umitools trim --end 5 unprocessed_fastq NNNNNV > out.fq
 
 For any given start site, save only one read per UMI.
 ```
-umitools rmdup unprocess.bam out.bam NNNNNV
+umitools rmdup unprocessed.bam out.bam NNNNNV
 ```
 
 ##Requires
