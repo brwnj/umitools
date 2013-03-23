@@ -13,7 +13,7 @@ setup(name='umitools',
       license='MIT',
       url='https://github.com/brwnjm/umitools',
       install_requires=['pysam', 'toolshed'],
-      scripts=['src/umitools'],
+      scripts=['umitools'],
       long_description=open('README.md').read(),
       classifiers=['License :: OSI Approved :: MIT License'],
 )

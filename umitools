@@ -8,8 +8,6 @@ from pysam import Samfile
 from toolshed import nopen
 from itertools import islice, izip
 
-__version__ = "v0.1.1"
-
 def get_umi(name):
     """parses read name and returns umi string"""
     toks = name.split(":")
@@ -101,7 +99,6 @@ if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser(description=__doc__,
             formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--version', action="version", version="%(prog)s " + __version__)
     subp = p.add_subparsers(help='commands')
     # bam processing
     bam = subp.add_parser('rmdup', help="remove duplicate UMI \
