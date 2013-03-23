@@ -2,9 +2,6 @@
 # encoding: utf-8
 """
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
-
-TODO:
-verify that no position has more counts than allowable by UMI
 """
 import sys
 from re import findall
@@ -17,6 +14,10 @@ from itertools import islice, izip
 # http://goo.gl/jNOGp
 import os
 os.environ['TERM'] = 'linux'
+
+IUPAC = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
+         "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
+         "B":"GTC","V":"GCA","D":"GAT","N":"GATC"}
 
 def decode(x):
     """not accounting for other scoring
@@ -38,10 +39,25 @@ def average(quals):
     vals = map(decode, quals)
     return sum(vals)/float(len(quals))
 
+def write_reads(bam, reads, cap):
+    """writes the read, but also verifies UMI saturation cap."""
+    pos = 0
+    neg = 0
+    for umi, read in reads.iteritems():
+        if "neg" in umi:
+            neg += 1
+        if "pos" in umi:
+            pos += 1
+        bam.write(read)
+    assert(pos <= cap)
+    assert(neg <= cap)
+
 def process_bam(args):
     """removes duplicate reads characterized by their UMI at any given start 
     location.
     """
+    # total possible umi combinations
+    possible = reduce(lambda x, y: x*y, [len(IUPAC[bp]) for bp in args.umi])
     with Samfile(args.abam, 'rb') as sam,\
             Samfile(args.bbam, 'wb', template=sam) as bam:
         unique_reads = {}
@@ -60,11 +76,11 @@ def process_bam(args):
                     unique_reads[umi] = read
             # new start coord
             else:
-                [bam.write(r) for r in unique_reads.itervalues()]
+                write_reads(bam, unique_reads, possible)
                 unique_reads = {}
                 unique_reads[umi] = read
                 pos = read.pos
-        [bam.write(r) for r in unique_reads.itervalues()]
+        write_reads(bam, unique_reads, possible)
 
 def read_fastq(fh):
     """fastq parser that returns name, seq, and qual."""
@@ -94,12 +110,9 @@ def valid_umi(iupac, umi):
     >>> valid_umi("NNNV", "ACGG")
     True
     """
-    IUPAC_definitions = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
-                            "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
-                            "B":"GTC","V":"GCA","D":"GAT","N":"GATC"}
     for code, base in izip(iupac, umi):
         try:
-            if not base in IUPAC_definitions[code]:
+            if not base in IUPAC[code]:
                 return False
         except KeyError:
             return False
@@ -197,6 +210,7 @@ if __name__ == "__main__":
             help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
             help='non-duplicate UMIs at any given start position')
+    bam.add_argument('umi', metavar='UMI', help='IUPAC sequence of the UMI')
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
