@@ -4,6 +4,7 @@
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 """
 import sys
+from re import findall
 from pysam import Samfile
 from toolshed import nopen
 from collections import Counter
@@ -14,33 +15,51 @@ from itertools import islice, izip
 import os
 os.environ['TERM'] = 'linux'
 
+def decode(x):
+    """not accounting for other scoring
+    
+    >>> decode("4")
+    19
+    >>> decode(";")
+    26
+    """
+    return ord(x) - 33
+
+def average(quals):
+    """
+    >>> average("4578;;77;;H@GFF>DFFFFFEEE")
+    30.84...
+    >>> average("/==96996<FGCHHHGGGFFE=EDFFFEEB")
+    32.53...
+    """
+    vals = map(decode, quals)
+    return sum(vals)/float(len(quals))
+
 def process_bam(args):
     """removes duplicate reads characterized by their UMI at any given start 
     location.
     """
-    with Samfile(args.bbam, 'wb', template=samfile) as bamfile,\
-                                    Samfile(args.abam, 'rb') as samfile:
-        reads = []
-        umis = []
+    with Samfile(args.abam, 'rb') as sam,\
+            Samfile(args.bbam, 'wb', template=sam) as bam:
+        unique_reads = {}
         pos = 0
-        for read in samfile.fetch():
-            umi = re.findall(r'UMI_([\w]*)', read.qname)[0].strip()
+        for read in sam.fetch():
+            umi = findall(r'UMI_([\w]*)', read.qname)[0].strip()
             # same start coord
             if read.pos == pos:
-                # skip non-unique UMIs
-                if not umi in umis:
-                    umis.append(umi)
-                    reads.append(read)
+                try:
+                    # needs to only filter dups on same strand (read.is_reverse)
+                    # keep the read with higher average quality
+                    if average(unique_reads[umi].qqual) < average(read.qqual):
+                        unique_reads[umi] = read
+                except KeyError:
+                    unique_reads[umi] = read
             else:
-                if len(reads) > 0:
-                    for alignedread in reads:
-                        bamfile.write(alignedread)
-                reads = [read]
-                umis = [umi]
+                [bam.write(r) for u, r in unique_reads.iteritems()]
+                unique_reads = {}
+                unique_reads[umi] = read
                 pos = read.pos
-        if len(reads) > 0:
-            for alignedread in reads:
-                bamfile.write(alignedread)
+        [bam.write(r) for u, r in unique_reads.iteritems()]
 
 def read_fastq(fh):
     """fastq parser that returns name, seq, and qual."""
@@ -140,6 +159,7 @@ def process_fastq(args):
     if args.verbose:
         print >> sys.stderr, "Invalid UMI Total:   %d" % sum(umi_stats.values())
         print >> sys.stderr, "Unique UMIs Removed: %d" % len(list(umi_stats))
+        # could option this out
         print >> sys.stderr, "Top 10 Invalid UMIs:"
         for umi, val in umi_stats.most_common(10):
             print >> sys.stderr, "\t".join([umi, str(val)])
@@ -167,11 +187,11 @@ if __name__ == "__main__":
     fastq.set_defaults(func=process_fastq)
     # bam processing
     bam = subp.add_parser('rmdup', help="remove duplicate UMI \
-            entries at originating from all start positions")
+            entries from all start positions")
     bam.add_argument('abam', metavar='INPUT_BAM',
             help='bam with UMI in read name')
-    bam.add_argument('bbam', metavar='OUTPUT_BAM', help="resultant bam with no \
-            duplicate UMIs at any given location")
+    bam.add_argument('bbam', metavar='OUTPUT_BAM',
+            help='non-duplicate UMIs at any given start position')
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
