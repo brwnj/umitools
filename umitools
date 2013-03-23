@@ -2,6 +2,9 @@
 # encoding: utf-8
 """
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
+
+TODO:
+verify that no position has more counts than allowable by UMI
 """
 import sys
 from re import findall
@@ -45,15 +48,17 @@ def process_bam(args):
         pos = 0
         for read in sam.fetch():
             umi = findall(r'UMI_([\w]*)', read.qname)[0].strip()
+            # strand info onto umi allowing pos and neg strand to saturate UMI
+            umi = "%sneg" % umi if read.is_reverse else "%spos" % umi
             # same start coord
             if read.pos == pos:
                 try:
-                    # needs to only filter dups on same strand (read.is_reverse)
                     # keep the read with higher average quality
                     if average(unique_reads[umi].qqual) < average(read.qqual):
                         unique_reads[umi] = read
                 except KeyError:
                     unique_reads[umi] = read
+            # new start coord
             else:
                 [bam.write(r) for r in unique_reads.itervalues()]
                 unique_reads = {}
