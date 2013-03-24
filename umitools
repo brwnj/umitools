@@ -49,15 +49,15 @@ def write_reads(bam, reads, cap):
         if "pos" in umi:
             pos += 1
         bam.write(read)
-    assert(pos <= cap)
-    assert(neg <= cap)
+    assert pos <= cap
+    assert neg <= cap
 
 def process_bam(args):
     """removes duplicate reads characterized by their UMI at any given start 
     location.
     """
     # total possible umi combinations
-    possible = reduce(lambda x, y: x*y, [len(IUPAC[bp]) for bp in args.umi])
+    possible = reduce(lambda x, y: x*y, [len(IUPAC[n]) for n in args.umi])
     with Samfile(args.abam, 'rb') as sam,\
             Samfile(args.bbam, 'wb', template=sam) as bam:
         unique_reads = {}
@@ -161,9 +161,7 @@ def create_record(name, seq, qual, iupac_umi, length, end):
             return False, umi
 
 def process_fastq(args):
-    """reads in fastq with UMI still in the sequence to verify the UMI as valid;
-    trim the UMI; and incorporate the UMI sequence into read name.
-    """
+    """for every valid umi, trim while incorporating into read name."""
     umi_stats = Counter()
     umi_length = len(args.umi)
     with nopen(args.fastq) as fastq:
@@ -192,7 +190,9 @@ if __name__ == "__main__":
             formatter_class=argparse.RawDescriptionHelpFormatter)
     subp = p.add_subparsers(help='commands')
     # fastq processing
-    fastq = subp.add_parser('trim', 
+    fastq = subp.add_parser('trim', description="Trims the UMI sequence from \
+            the read, incorporating the unique sequence in the read name \
+            facilitating filtering of the alignments.",
             help="trim UMI and incorporate sequence into read name")
     fastq.add_argument('fastq', metavar='FASTQ',
             help='reads with untrimmed UMI')
@@ -204,13 +204,16 @@ if __name__ == "__main__":
             help="print UMI stats to stderr [ %(default)s ]")
     fastq.set_defaults(func=process_fastq)
     # bam processing
-    bam = subp.add_parser('rmdup', help="remove duplicate UMI \
-            entries from all start positions")
+    bam = subp.add_parser('rmdup', description="Removes duplicate reads, that \
+            were previously characterized by their UMI, at any given start \
+            location.",
+            help="remove duplicate UMI entries from all start positions")
     bam.add_argument('abam', metavar='INPUT_BAM',
             help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
             help='non-duplicate UMIs at any given start position')
-    bam.add_argument('umi', metavar='UMI', help='IUPAC sequence of the UMI')
+    bam.add_argument('umi', metavar='UMI',
+            help='IUPAC sequence of the UMI, e.g. NNNNNV')
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
