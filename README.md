@@ -4,7 +4,8 @@ Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 
 ## Trim the UMI
 
-Incorporate the UMI into the read sequence in order to later identify among mapped reads.
+Incorporate the UMI into the read name in order to later identify while
+processing mapped reads.
 ```
 umitools trim --end 5 unprocessed_fastq NNNNNV > out.fq
 ```
