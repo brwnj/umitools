@@ -69,6 +69,7 @@ def process_bam(args):
             # same start coord
             if read.pos == pos:
                 try:
+                    # TODO: track stats on how many are being filtered, where
                     # keep the read with higher average quality
                     if average(unique_reads[umi].qqual) < average(read.qqual):
                         unique_reads[umi] = read
