@@ -10,7 +10,7 @@ from toolshed import nopen
 from collections import Counter
 from itertools import islice, izip
 
-# until i separate out the tests, osx needs this
+# Until I separate out the tests, OS X needs this:
 # http://goo.gl/jNOGp
 import os
 os.environ['TERM'] = 'linux'
@@ -44,44 +44,66 @@ def write_reads(bam, reads, cap):
     pos = 0
     neg = 0
     for umi, read in reads.iteritems():
-        if "neg" in umi:
-            neg += 1
-        if "pos" in umi:
-            pos += 1
+        if umi.endswith("neg"): neg += 1
+        if umi.endswith("pos"): pos += 1
         bam.write(read)
     assert pos <= cap
     assert neg <= cap
 
+def total_possible(umi):
+    """total possible UMI combinations.
+    >>> total_possible("NNNNNV")
+    3072
+    >>> total_possible("NNNNNR")
+    2048
+    """
+    return reduce(lambda x, y: x * y, [len(IUPAC[n]) for n in umi])
+
+def umi_from_name(name):
+    """extract the UMI sequence from the read name.
+    >>> umi_from_name("cluster_1017333:UMI_GCCGCA")
+    'GCCGCA'
+    """
+    return findall(r'UMI_([\w]*)', name)[0].strip()
+
+def add_strand(umi, reverse):
+    """add strand info onto UMI, allowing pos and neg strand to saturate UMI.
+    >>> add_strand("GCCGCA", True)
+    'GCCGCAneg'
+    >>> add_strand("GCCGCA", False)
+    'GCCGCApos'
+    """
+    return "%sneg" % umi if reverse else "%spos" % umi
+
 def process_bam(args):
-    """removes duplicate reads characterized by their UMI at any given start 
+    """removes duplicate reads characterized by their UMI at any given start
     location.
     """
-    # total possible umi combinations
-    possible = reduce(lambda x, y: x*y, [len(IUPAC[n]) for n in args.umi])
+    possible = total_possible(args.umi)
     with Samfile(args.abam, 'rb') as sam,\
             Samfile(args.bbam, 'wb', template=sam) as bam:
         unique_reads = {}
-        pos = 0
+        pos = filtered = seen = 0
         for read in sam.fetch():
-            umi = findall(r'UMI_([\w]*)', read.qname)[0].strip()
-            # strand info onto umi allowing pos and neg strand to saturate UMI
-            umi = "%sneg" % umi if read.is_reverse else "%spos" % umi
-            # same start coord
+            seen += 1
+            umi = add_strand(umi_from_name(read.qname), read.is_reverse)
             if read.pos == pos:
                 try:
-                    # TODO: track stats on how many are being filtered, where
                     # keep the read with higher average quality
                     if average(unique_reads[umi].qqual) < average(read.qqual):
                         unique_reads[umi] = read
+                    filtered += 1
                 except KeyError:
                     unique_reads[umi] = read
-            # new start coord
             else:
                 write_reads(bam, unique_reads, possible)
-                unique_reads = {}
-                unique_reads[umi] = read
+                unique_reads = {umi:read}
                 pos = read.pos
         write_reads(bam, unique_reads, possible)
+        if args.verbose:
+            print >>sys.stderr, "Input Sequences:     %d" % seen
+            print >>sys.stderr, "Sequences Removed:   %d" % filtered
+            print >>sys.stderr, "Remaining Sequences: %d" % (seen - filtered)
 
 def read_fastq(fh):
     """fastq parser that returns name, seq, and qual."""
@@ -104,10 +126,8 @@ def read_fastq(fh):
 
 def valid_umi(iupac, umi):
     """parse UMI sequence to validate against IUPAC sequence.
-    
     >>> valid_umi("NNNV", "ACGT")
     False
-
     >>> valid_umi("NNNV", "ACGG")
     True
     """
@@ -121,52 +141,41 @@ def valid_umi(iupac, umi):
 
 def create_record(name, seq, qual, iupac_umi, length, end):
     """
-    # UMI on the 5' end
     >>> create_record("cluster_455",\
             "GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
             "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4",\
             "NNNNNV", 6, "5")
-    '@cluster_455:UMI_GGGGGA\\nGCCACGAGGTGTGTTTTATTTTCATTATTC\\n+\\nB=@:<;4A;8=9?6EEC0?DDA72B@3EB4'
-
-    # invalid UMI
+    '@cluster_455:UMI_GGGGGA\\nGCCACGAGGTGTGTTTT\
+ATTTTCATTATTC\\n+\\nB=@:<;4A;8=9?6EEC0?DDA72B@3EB4'
     >>> create_record("cluster_455",\
             "GGGGGTGCCACGATTCATTATTC",\
             "C===>=B=@:0?DDA72B@3EB4",\
             "NNNNNV", 6, "5")
     (False, 'GGGGGT')
-
-    # UMI on the 3' end
     >>> create_record("cluster_455",\
             "GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
             "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4",\
             "NNNNNV", 6, "3")
-    '@cluster_455:UMI_TTATTC\\nGGGGGAGCCACGAGGTGTGTTTTATTTTCA\\n+\\nC===>=B=@:<;4A;8=9?6EEC0?DDA72'
+    '@cluster_455:UMI_TTATTC\\nGGGGGAGCCACGAGGTG\
+TGTTTTATTTTCA\\n+\\nC===>=B=@:<;4A;8=9?6EEC0?DDA72'
     """
     if end == "5":
         umi = seq[:length]
-        # validate
-        if valid_umi(iupac_umi, umi):
-            # make record and return
-            return "@%s:UMI_%s\n%s\n+\n%s" % \
-                        (name, umi, seq[length:], qual[length:])
-        else:
-            return False, umi
-    else: # 3' end
+        seq = seq[length:]
+        qual = qual[length:]
+    else:
         umi = seq[-length:]
-        # validate
-        if valid_umi(iupac_umi, umi):
-            # make record and return
-            return "@%s:UMI_%s\n%s\n+\n%s" % \
-                        (name, umi, seq[:-length], qual[:-length])
-        else:
-            return False, umi
+        seq = seq[:-length]
+        qual = qual[:-length]    
+    if not valid_umi(iupac_umi, umi): return False, umi
+    return "@%s:UMI_%s\n%s\n+\n%s" % (name, umi, seq, qual)
 
 def process_fastq(args):
     """for every valid umi, trim while incorporating into read name."""
     umi_stats = Counter()
     umi_length = len(args.umi)
-    with nopen(args.fastq) as fastq:
-        for name, seq, qual in read_fastq(fastq):
+    with nopen(args.fastq) as fh:
+        for name, seq, qual in read_fastq(fh):
             record = create_record(name, seq, qual, args.umi, umi_length, args.end)
             if record[0]:
                 print record
@@ -174,12 +183,11 @@ def process_fastq(args):
                 record, umi = record
                 umi_stats.update([umi])
     if args.verbose:
-        print >> sys.stderr, "Invalid UMI Total:   %d" % sum(umi_stats.values())
-        print >> sys.stderr, "Unique UMIs Removed: %d" % len(list(umi_stats))
-        # could option this out
-        print >> sys.stderr, "Top 10 Invalid UMIs:"
-        for umi, val in umi_stats.most_common(10):
-            print >> sys.stderr, "\t".join([umi, str(val)])
+        print >>sys.stderr, "Invalid UMI Total:   %d" % sum(umi_stats.values())
+        print >>sys.stderr, "Unique UMIs Removed: %d" % len(list(umi_stats))
+        print >>sys.stderr, "Top %d Invalid UMIs:" % args.top
+        for umi, val in umi_stats.most_common(args.top):
+            print >>sys.stderr, "\t".join([umi, str(val)])
 
 def main(args):
     args.func(args)
@@ -200,9 +208,12 @@ if __name__ == "__main__":
     fastq.add_argument('umi', metavar='UMI',
             help='IUPAC UMI sequence, e.g. NNNNNV')
     fastq.add_argument('--end', choices=['5', '3'], default="5", 
-            help="UMI location on the read [ %(default)s ]")
+            help="UMI location on the read [%(default)s]")
     fastq.add_argument('--verbose', action='store_true',
-            help="print UMI stats to stderr [ %(default)s ]")
+            help="print UMI stats to stderr [%(default)s]")
+    fastq.add_argument('--top', type=int, default=10,
+            help="when verbose, print this many of the top filtered \
+            UMI sequences [%(default)s]")
     fastq.set_defaults(func=process_fastq)
     # bam processing
     bam = subp.add_parser('rmdup', description="Removes duplicate reads, that \
@@ -215,6 +226,8 @@ if __name__ == "__main__":
             help='non-duplicate UMIs at any given start position')
     bam.add_argument('umi', metavar='UMI',
             help='IUPAC sequence of the UMI, e.g. NNNNNV')
+    bam.add_argument('--verbose', action='store_true',
+            help="print rmdup stats [%(default)s]")
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
