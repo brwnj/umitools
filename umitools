@@ -8,7 +8,7 @@ from re import findall
 from pysam import Samfile
 from toolshed import nopen
 from collections import Counter
-from itertools import islice, izip
+from itertools import islice, izip, groupby
 
 # Until I separate out the tests, OS X needs this:
 # http://goo.gl/jNOGp
@@ -75,35 +75,35 @@ def add_strand(umi, reverse):
     """
     return "%sneg" % umi if reverse else "%spos" % umi
 
+def group_starts(fh):
+    for key, grp in groupby(fh, key=lambda read: read.pos):
+        yield grp
+
 def process_bam(args):
     """removes duplicate reads characterized by their UMI at any given start
     location.
     """
     possible = total_possible(args.umi)
+    filtered, seen = 0, 0
     with Samfile(args.abam, 'rb') as sam,\
             Samfile(args.bbam, 'wb', template=sam) as bam:
-        unique_reads = {}
-        pos = filtered = seen = 0
-        for read in sam.fetch():
-            seen += 1
-            umi = add_strand(umi_from_name(read.qname), read.is_reverse)
-            if read.pos == pos:
+        it = sam.fetch()
+        for reads in group_starts(it):
+            unique_reads = {}
+            for read in reads:
+                seen += 1
+                umi = add_strand(umi_from_name(read.qname), read.is_reverse)
                 try:
-                    # keep the read with higher average quality
                     if average(unique_reads[umi].qqual) < average(read.qqual):
                         unique_reads[umi] = read
                     filtered += 1
                 except KeyError:
                     unique_reads[umi] = read
-            else:
-                write_reads(bam, unique_reads, possible)
-                unique_reads = {umi:read}
-                pos = read.pos
-        write_reads(bam, unique_reads, possible)
-        if args.verbose:
-            print >>sys.stderr, "Input Sequences:     %d" % seen
-            print >>sys.stderr, "Sequences Removed:   %d" % filtered
-            print >>sys.stderr, "Remaining Sequences: %d" % (seen - filtered)
+            write_reads(bam, unique_reads, possible)
+    if args.verbose:
+        print >>sys.stderr, "Input Sequences:     %d" % seen
+        print >>sys.stderr, "Sequences Removed:   %d" % filtered
+        print >>sys.stderr, "Remaining Sequences: %d" % (seen - filtered)
 
 def read_fastq(fh):
     """fastq parser that returns name, seq, and qual."""
