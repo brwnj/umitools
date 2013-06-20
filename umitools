@@ -15,9 +15,25 @@ from itertools import islice, izip, groupby
 import os
 os.environ['TERM'] = 'linux'
 
+__version__ = "version 0.1"
+
 IUPAC = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
          "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
          "B":"GTC","V":"GCA","D":"GAT","N":"GATC"}
+
+class Fastq(object):
+    def __init__(self, args):
+        self.name = args[0][1:]
+        self.seq = args[1]
+        self.qual = args[3]
+        assert len(self.seq) == len(self.qual)
+
+    def __repr__(self):
+        return "Fastq({name})".format(name=self.name)
+
+    def __str__(self):
+        return "@{name}\n{seq}\n+\n{qual}".format(name=self.name,
+                seq=self.seq, qual=self.qual)
 
 def decode(x):
     """not accounting for other scoring
@@ -105,24 +121,14 @@ def process_bam(args):
         print >>sys.stderr, "Sequences Removed:   %d" % filtered
         print >>sys.stderr, "Remaining Sequences: %d" % (seen - filtered)
 
-def read_fastq(fh):
-    """fastq parser that returns name, seq, and qual."""
-    while True:
-        values = list(islice(fh, 4))
-        if len(values) == 4:
-            id1, seq, id2, qual = values
-        elif len(values) == 0:
-            raise StopIteration
-        else:
-            raise EOFError("unexpected end of file")
-        assert id1.startswith('@'),\
-                ">> Fastq out of sync at read:\n%s\n" % id1
-        assert id2.startswith('+'),\
-                ">> Fastq out of sync at read:\n%s\n" % id1
-        assert len(seq) == len(qual),\
-                ">> Sequence and Quality are not the same length \
-                for read:\n%s\n" % id1
-        yield id1[1:-1], seq[:-1], qual[:-1]
+def readfq(fq):    
+    with nopen(fq) as fh:
+        fqclean = (x.strip("\r\n") for x in fh if x.strip())
+        while True:
+            rd = [x for x in islice(fqclean, 4)]
+            if not rd: raise StopIteration
+            assert all(rd) and len(rd) == 4
+            yield Fastq(rd)
 
 def valid_umi(iupac, umi):
     """parse UMI sequence to validate against IUPAC sequence.
@@ -139,49 +145,50 @@ def valid_umi(iupac, umi):
             return False
     return True
 
-def create_record(name, seq, qual, iupac_umi, length, end):
+def clip_umi(record, iupac_umi, n, end):
     """
-    >>> create_record("cluster_455",\
-            "GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
-            "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4",\
-            "NNNNNV", 6, "5")
-    '@cluster_455:UMI_GGGGGA\\nGCCACGAGGTGTGTTTT\
-ATTTTCATTATTC\\n+\\nB=@:<;4A;8=9?6EEC0?DDA72B@3EB4'
-    >>> create_record("cluster_455",\
-            "GGGGGTGCCACGATTCATTATTC",\
-            "C===>=B=@:0?DDA72B@3EB4",\
-            "NNNNNV", 6, "5")
-    (False, 'GGGGGT')
-    >>> create_record("cluster_455",\
-            "GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
-            "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4",\
-            "NNNNNV", 6, "3")
-    '@cluster_455:UMI_TTATTC\\nGGGGGAGCCACGAGGTG\
-TGTTTTATTTTCA\\n+\\nC===>=B=@:<;4A;8=9?6EEC0?DDA72'
+    >>> fq = Fastq(["@cluster_455 2",\
+                        "GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
+                        "+",\
+                        "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
+    >>> clip_umi(fq, "NNNNNV", 6, "5")
+    Fastq(cluster_455:UMI_GGGGGA 2)
+    >>> fq = Fastq(["@cluster_455 2",\
+                        "GGXXGAGCCACGAGGTGTGTTTTATTTTCATTATTC",\
+                        "+",\
+                        "C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
+    >>> clip_umi(fq, "NNNNNV", 6, "5")
+    'GGXXGA'
     """
     if end == "5":
-        umi = seq[:length]
-        seq = seq[length:]
-        qual = qual[length:]
+        umi = record.seq[:n]
+        record.seq = record.seq[n:]
+        record.qual = record.qual[n:]
     else:
-        umi = seq[-length:]
-        seq = seq[:-length]
-        qual = qual[:-length]    
-    if not valid_umi(iupac_umi, umi): return False, umi
-    return "@%s:UMI_%s\n%s\n+\n%s" % (name, umi, seq, qual)
+        umi = record.seq[-n:]
+        record.seq = record.seq[:-n]
+        record.qual = record.qual[:-n]
+    if not valid_umi(iupac_umi, umi):
+        return umi
+    try:
+        name, pair = record.name.split(" ", 1)
+        record.name = "{name}:UMI_{umi} {pair}".format(**locals())
+    except ValueError:
+        record.name = "{name}:UMI_{umi}".format(name=record.name, umi=umi)
+    return record
 
 def process_fastq(args):
     """for every valid umi, trim while incorporating into read name."""
     umi_stats = Counter()
-    umi_length = len(args.umi)
-    with nopen(args.fastq) as fh:
-        for name, seq, qual in read_fastq(fh):
-            record = create_record(name, seq, qual, args.umi, umi_length, args.end)
-            if record[0]:
-                print record
-            else:
-                record, umi = record
-                umi_stats.update([umi])
+    iupac = args.umi
+    u_leng = len(args.umi)
+    end = args.end
+    for r in readfq(args.fastq):
+        r = clip_umi(r, iupac, u_leng, end)
+        if type(r) is Fastq:
+            print r
+        else:
+            umi_stats.update([r])
     if args.verbose:
         print >>sys.stderr, "Invalid UMI Total:   %d" % sum(umi_stats.values())
         print >>sys.stderr, "Unique UMIs Removed: %d" % len(list(umi_stats))
@@ -195,30 +202,31 @@ def main(args):
 if __name__ == "__main__":
     import argparse
     import doctest
-    p = argparse.ArgumentParser(description=__doc__,
-            formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(description=__doc__, version=__version__)
     subp = p.add_subparsers(help='commands')
     # fastq processing
     fastq = subp.add_parser('trim', description="Trims the UMI sequence from \
             the read, incorporating the unique sequence in the read name \
             facilitating filtering of the alignments.",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             help="trim UMI and incorporate sequence into read name")
     fastq.add_argument('fastq', metavar='FASTQ',
             help='reads with untrimmed UMI')
     fastq.add_argument('umi', metavar='UMI',
             help='IUPAC UMI sequence, e.g. NNNNNV')
     fastq.add_argument('--end', choices=['5', '3'], default="5", 
-            help="UMI location on the read [%(default)s]")
+            help="UMI location on the read")
     fastq.add_argument('--verbose', action='store_true',
-            help="print UMI stats to stderr [%(default)s]")
+            help="print UMI stats to stderr")
     fastq.add_argument('--top', type=int, default=10,
             help="when verbose, print this many of the top filtered \
-            UMI sequences [%(default)s]")
+            UMI sequences")
     fastq.set_defaults(func=process_fastq)
     # bam processing
     bam = subp.add_parser('rmdup', description="Removes duplicate reads, that \
             were previously characterized by their UMI, at any given start \
             location.",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             help="remove duplicate UMI entries from all start positions")
     bam.add_argument('abam', metavar='INPUT_BAM',
             help='bam with UMI in read name')
@@ -227,7 +235,7 @@ if __name__ == "__main__":
     bam.add_argument('umi', metavar='UMI',
             help='IUPAC sequence of the UMI, e.g. NNNNNV')
     bam.add_argument('--verbose', action='store_true',
-            help="print rmdup stats [%(default)s]")
+            help="print rmdup stats")
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
