@@ -6,7 +6,7 @@ ez_setup.use_setuptools()
 from setuptools import setup
 
 setup(name='umitools',
-      version='0.1.2',
+      version='0.1.3',
       description='handle reads with an incorporated UMI',
       author='Joe Brown',
       author_email='brwnjm@gmail.com',
