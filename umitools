@@ -3,7 +3,11 @@
 """
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 """
+import os
 import sys
+import doctest
+import argparse
+
 from re import findall
 from pysam import Samfile
 from toolshed import nopen
@@ -12,10 +16,9 @@ from itertools import islice, izip, groupby
 
 # Until I separate out the tests, OS X needs this:
 # http://goo.gl/jNOGp
-import os
 os.environ['TERM'] = 'linux'
 
-__version__ = "version 0.1.3"
+__version__ = "version 0.1.4"
 
 IUPAC = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
          "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
@@ -56,13 +59,15 @@ def average(quals):
     return sum(vals)/float(len(quals))
 
 def write_reads(bam, reads, cap):
-    """writes the read, but also verifies UMI saturation cap."""
+    """writes the read into bam file and verifies UMI saturation cap."""
     pos = 0
     neg = 0
     for umi, read in reads.iteritems():
         if umi.endswith("neg"): neg += 1
         if umi.endswith("pos"): pos += 1
         bam.write(read)
+    # could make this assertion each time, but any failure would generate
+    # a malformed bam
     assert pos <= cap
     assert neg <= cap
 
@@ -117,9 +122,12 @@ def process_bam(args):
                     unique_reads[umi] = read
             write_reads(bam, unique_reads, possible)
     if args.verbose:
-        print >>sys.stderr, "Input Sequences:     %d" % seen
-        print >>sys.stderr, "Sequences Removed:   %d" % filtered
-        print >>sys.stderr, "Remaining Sequences: %d" % (seen - filtered)
+        print >>sys.stderr, \
+            "Input Sequences:     {seen}".format(seen=seen)
+        print >>sys.stderr, \
+            "Sequences Removed:   {filtered}".format(filtered=filtered)
+        print >>sys.stderr, \
+            "Remaining Sequences: {difference}".format(difference=seen - filtered)
 
 def readfq(fq):    
     with nopen(fq) as fh:
@@ -172,7 +180,9 @@ def clip_umi(record, iupac_umi, n, end):
         return umi
     try:
         name, pair = record.name.split(" ", 1)
-        record.name = "{name}:UMI_{umi} {pair}".format(**locals())
+        record.name = "{name}:UMI_{umi} {pair}".format(name=name,
+                                                        umi=umi,
+                                                        pair=pair)
     except ValueError:
         record.name = "{name}:UMI_{umi}".format(name=record.name, umi=umi)
     return record
@@ -190,9 +200,9 @@ def process_fastq(args):
         else:
             umi_stats.update([r])
     if args.verbose:
-        print >>sys.stderr, "Invalid UMI Total:   %d" % sum(umi_stats.values())
-        print >>sys.stderr, "Unique UMIs Removed: %d" % len(list(umi_stats))
-        print >>sys.stderr, "Top %d Invalid UMIs:" % args.top
+        print >>sys.stderr, "Invalid UMI Total:   {count}".format(count=sum(umi_stats.values()))
+        print >>sys.stderr, "Unique UMIs Removed: {count}".format(count=len(list(umi_stats)))
+        print >>sys.stderr, "Top {count} Invalid UMIs:".format(count=args.top)
         for umi, val in umi_stats.most_common(args.top):
             print >>sys.stderr, "\t".join([umi, str(val)])
 
@@ -200,10 +210,10 @@ def main(args):
     args.func(args)
 
 if __name__ == "__main__":
-    import argparse
-    import doctest
+
     p = argparse.ArgumentParser(description=__doc__, version=__version__)
     subp = p.add_subparsers(help='commands')
+
     # fastq processing
     fastq = subp.add_parser('trim', description="Trims the UMI sequence from \
             the read, incorporating the unique sequence in the read name \
@@ -222,6 +232,7 @@ if __name__ == "__main__":
             help="when verbose, print this many of the top filtered \
             UMI sequences")
     fastq.set_defaults(func=process_fastq)
+
     # bam processing
     bam = subp.add_parser('rmdup', description="Removes duplicate reads, that \
             were previously characterized by their UMI, at any given start \
@@ -239,4 +250,5 @@ if __name__ == "__main__":
     bam.set_defaults(func=process_bam)
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
-        main(p.parse_args())
+        args = p.parse_args()
+        main(args)
