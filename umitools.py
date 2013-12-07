@@ -10,7 +10,7 @@ from re import findall
 from pysam import Samfile
 from toolshed import nopen
 from collections import Counter
-from itertools import islice, izip, groupby
+from itertools import islice, izip
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 os.environ['TERM'] = 'linux'
@@ -35,95 +35,83 @@ class Fastq(object):
         return "@{name}\n{seq}\n+\n{qual}".format(name=self.name,
                 seq=self.seq, qual=self.qual)
 
-def decode(x):
-    """not accounting for other scoring
-    
-    >>> decode("4")
-    19
-    >>> decode(";")
-    26
-    """
-    return ord(x) - 33
-
-def average(quals):
-    """
-    >>> average("4578;;77;;H@GFF>DFFFFFEEE")
-    30.84...
-    >>> average("/==96996<FGCHHHGGGFFE=EDFFFEEB")
-    32.53...
-    """
-    vals = map(decode, quals)
-    return sum(vals)/float(len(quals))
-
-def write_reads(bam, reads, cap):
-    """writes the read into bam file and verifies UMI saturation cap."""
-    pos = 0
-    neg = 0
-    for umi, read in reads.iteritems():
-        if umi.endswith("neg"): neg += 1
-        if umi.endswith("pos"): pos += 1
-        bam.write(read)
-
-    assert pos <= cap
-    assert neg <= cap
-
-def total_possible(umi):
-    """total possible UMI combinations.
-    >>> total_possible("NNNNNV")
-    3072
-    >>> total_possible("NNNNNR")
-    2048
-    """
-    return reduce(lambda x, y: x * y, [len(IUPAC[n]) for n in umi])
-
 def umi_from_name(name):
-    """extract the UMI sequence from the read name.
+    """
+    extract the UMI sequence from the read name.
+
     >>> umi_from_name("cluster_1017333:UMI_GCCGCA")
     'GCCGCA'
     """
     return findall(r'UMI_([\w]*)', name)[0].strip()
 
-def add_strand(umi, reverse):
-    """add strand info onto UMI, allowing pos and neg strand to saturate UMI.
+def add_strand(umi, is_reverse):
+    """
+    add strand info onto UMI, allowing pos and neg strand to saturate UMI.
+
     >>> add_strand("GCCGCA", True)
     'GCCGCAneg'
     >>> add_strand("GCCGCA", False)
     'GCCGCApos'
     """
-    return "%sneg" % umi if reverse else "%spos" % umi
+    return "%sneg" % umi if is_reverse else "%spos" % umi
 
-def group_starts(fh):
-    for key, grp in groupby(fh, key=lambda read: read.pos):
-        yield grp
+def get_chromosomes(sam_header):
+    """
+    parse sam header to return SN values within SQ lines.
+    """
+    chromosomes = []
+
+    for line in sam_header.split("\n"):
+        if not line.startswith("@SQ"): continue
+        line = line.strip().split("\t")
+
+        for token in line:
+            if not token.startswith("SN"): continue
+            chromosome = token.split(":", 1)[1]
+            chromosomes.append(chromosome)
+
+    return chromosomes
 
 def process_bam(args):
-    """removes duplicate reads characterized by their UMI at any given start
+    """
+    removes duplicate reads characterized by their UMI at any given start
     location.
     """
-    possible = total_possible(args.umi)
-    filtered, seen = 0, 0
-    with Samfile(args.abam, 'rb') as sam, Samfile(args.bbam, 'wb', template=sam) as bam:
-        for reads in group_starts(sam.fetch()):
-            unique_reads = {}
-            for read in reads:
-                seen += 1
-                umi = add_strand(umi_from_name(read.qname), read.is_reverse)
-                try:
-                    if average(unique_reads[umi].qqual) < average(read.qqual):
-                        unique_reads[umi] = read
-                    filtered += 1
-                except KeyError:
-                    unique_reads[umi] = read
-            write_reads(bam, unique_reads, possible)
-    if args.verbose:
-        print >>sys.stderr, \
-            "Input Sequences:     {seen}".format(seen=seen)
-        print >>sys.stderr, \
-            "Sequences Removed:   {filtered}".format(filtered=filtered)
-        print >>sys.stderr, \
-            "Remaining Sequences: {difference}".format(difference=seen - filtered)
+    with Samfile(args.abam, 'rb') as in_bam, Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
+        chromosomes = get_chromosomes(in_bam.text)
 
-def readfq(fq):    
+        for chrom in chromosomes:
+            print >>sys.stderr, "processing chromosome", chrom
+            umi_idx = {}
+
+            for read in in_bam.fetch(chrom):
+                if read.is_unmapped: continue
+                # get the iupac umi sequence
+                umi = umi_from_name(read.qname)
+                # add strand onto umi before adding to index
+                umi = add_strand(umi, read.is_reverse)
+                # get actual read start
+                if read.is_reverse:
+                    # read.pos accounts for 5' soft clipping without respect
+                    # to strand
+                    # alen is the length of the alignment, accounting
+                    # for 3' soft clipping
+                    # UMIs are then compared to reads with the same alignment
+                    # start position
+                    read_start = read.pos + read.alen
+                else:
+                    read_start = read.pos + read.qstart
+                # check for duplicate UMI
+                try:
+                    if umi in umi_idx[read_start]:
+                        continue
+                    umi_idx[read_start].add(umi)
+                except KeyError:
+                    umi_idx[read_start] = {umi}
+
+                out_bam.write(read)
+
+def readfq(fq):
     with nopen(fq) as fh:
         fqclean = (x.strip("\r\n") for x in fh if x.strip())
         while True:
@@ -133,7 +121,9 @@ def readfq(fq):
             yield Fastq(rd)
 
 def valid_umi(iupac, umi):
-    """parse UMI sequence to validate against IUPAC sequence.
+    """
+    parse UMI sequence to validate against IUPAC sequence.
+    
     >>> valid_umi("NNNV", "ACGT")
     False
     >>> valid_umi("NNNV", "ACGG")
@@ -182,7 +172,9 @@ def clip_umi(record, iupac_umi, n, end):
     return record
 
 def process_fastq(args):
-    """for every valid umi, trim while incorporating into read name."""
+    """
+    for every valid umi, trim while incorporating into read name.
+    """
     umi_stats = Counter()
     iupac = args.umi
     u_leng = len(args.umi)
@@ -200,8 +192,6 @@ def process_fastq(args):
         for umi, val in umi_stats.most_common(args.top):
             print >>sys.stderr, "\t".join([umi, str(val)])
 
-def main(args):
-    args.func(args)
 
 if __name__ == "__main__":
 
@@ -218,7 +208,7 @@ if __name__ == "__main__":
             help='reads with untrimmed UMI')
     fastq.add_argument('umi', metavar='UMI',
             help='IUPAC UMI sequence, e.g. NNNNNV')
-    fastq.add_argument('--end', choices=['5', '3'], default="5", 
+    fastq.add_argument('--end', choices=['5', '3'], default="5",
             help="UMI location on the read")
     fastq.add_argument('--verbose', action='store_true',
             help="print UMI stats to stderr")
@@ -239,11 +229,9 @@ if __name__ == "__main__":
             help='non-duplicate UMIs at any given start position')
     bam.add_argument('umi', metavar='UMI',
             help='IUPAC sequence of the UMI, e.g. NNNNNV')
-    bam.add_argument('--verbose', action='store_true',
-            help="print rmdup stats")
     bam.set_defaults(func=process_bam)
 
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
                                    doctest.NORMALIZE_WHITESPACE).failed == 0:
         args = p.parse_args()
-        main(args)
+        args.func(args)
