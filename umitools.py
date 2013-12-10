@@ -91,16 +91,13 @@ def process_bam(args):
                 # add strand onto umi before adding to index
                 umi = add_strand(umi, read.is_reverse)
                 # get actual read start
+                # read.pos accounts for 5' soft clipping
                 if read.is_reverse:
-                    # read.pos accounts for 5' soft clipping without respect
-                    # to strand
-                    # alen is the length of the alignment, accounting
-                    # for 3' soft clipping
-                    # UMIs are then compared to reads with the same alignment
-                    # start position
+                    # read.alen alignment length accounting for 3' soft clipping
+                    # UMIs are then compared to reads with the same start
                     read_start = read.pos + read.alen
                 else:
-                    read_start = read.pos + read.qstart
+                    read_start = read.pos
                 # check for duplicate UMI
                 try:
                     if umi in umi_idx[read_start]:
