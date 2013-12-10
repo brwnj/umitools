@@ -123,7 +123,7 @@ def readfq(fq):
 def valid_umi(iupac, umi):
     """
     parse UMI sequence to validate against IUPAC sequence.
-    
+
     >>> valid_umi("NNNV", "ACGT")
     False
     >>> valid_umi("NNNV", "ACGG")
