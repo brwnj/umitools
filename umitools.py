@@ -15,11 +15,13 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 os.environ['TERM'] = 'linux'
 
-__version__ = "version 0.1.5"
+__version__ = "version 0.1.6"
+
 
 IUPAC = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
          "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
          "B":"GTC","V":"GCA","D":"GAT","N":"GATC"}
+
 
 class Fastq(object):
     def __init__(self, args):
@@ -35,6 +37,7 @@ class Fastq(object):
         return "@{name}\n{seq}\n+\n{qual}".format(name=self.name,
                 seq=self.seq, qual=self.qual)
 
+
 def umi_from_name(name):
     """
     extract the UMI sequence from the read name.
@@ -43,6 +46,7 @@ def umi_from_name(name):
     'GCCGCA'
     """
     return findall(r'UMI_([\w]*)', name)[0].strip()
+
 
 def add_strand(umi, is_reverse):
     """
@@ -54,6 +58,7 @@ def add_strand(umi, is_reverse):
     'GCCGCApos'
     """
     return "%sneg" % umi if is_reverse else "%spos" % umi
+
 
 def get_chromosomes(sam_header):
     """
@@ -70,27 +75,38 @@ def get_chromosomes(sam_header):
             chromosome = token.split(":", 1)[1]
             chromosomes.append(chromosome)
 
+    assert len(chromosomes) > 0
     return chromosomes
+
 
 def process_bam(args):
     """
     removes duplicate reads characterized by their UMI at any given start
     location.
+
+    abam    input bam with potential duplicate UMIs
+    bbam    output bam after removing duplicate UMIs
     """
-    with Samfile(args.abam, 'rb') as in_bam, Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
+    with Samfile(args.abam, 'rb') as in_bam, \
+            Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
         chromosomes = get_chromosomes(in_bam.text)
 
         for chrom in chromosomes:
             print >>sys.stderr, "processing chromosome", chrom
             umi_idx = {}
+            read_counts = {}
 
             for read in in_bam.fetch(chrom):
                 if read.is_unmapped: continue
+
                 # get the iupac umi sequence
                 umi = umi_from_name(read.qname)
-                # add strand onto umi before adding to index
-                umi = add_strand(umi, read.is_reverse)
-                # get actual read start
+
+                # check for duplicate regardless of strand
+                # # add strand onto umi before adding to index
+                # umi = add_strand(umi, read.is_reverse)
+
+                # get actual read start3
                 # read.pos accounts for 5' soft clipping
                 if read.is_reverse:
                     # read.alen alignment length accounting for 3' soft clipping
@@ -98,6 +114,13 @@ def process_bam(args):
                     read_start = read.pos + read.alen
                 else:
                     read_start = read.pos
+
+                # add count for this start
+                try:
+                    read_counts[read_start] += 1
+                except KeyError:
+                    read_counts[read_start] = 1
+
                 # check for duplicate UMI
                 try:
                     if umi in umi_idx[read_start]:
@@ -108,6 +131,16 @@ def process_bam(args):
 
                 out_bam.write(read)
 
+            # process before and after counts over chrom
+            for start, before_count in sorted(read_counts.iteritems()):
+                print "{chrom}\t{start}\t{stop}\t{before}\t{after}".format(
+                            chrom=chrom,
+                            start=start,
+                            stop=start+1,
+                            before=before_count,
+                            after=len(umi_idx[start]))
+
+
 def readfq(fq):
     with nopen(fq) as fh:
         fqclean = (x.strip("\r\n") for x in fh if x.strip())
@@ -116,6 +149,7 @@ def readfq(fq):
             if not rd: raise StopIteration
             assert all(rd) and len(rd) == 4
             yield Fastq(rd)
+
 
 def valid_umi(iupac, umi):
     """
@@ -133,6 +167,7 @@ def valid_umi(iupac, umi):
         except KeyError:
             return False
     return True
+
 
 def clip_umi(record, iupac_umi, n, end):
     """
@@ -168,13 +203,22 @@ def clip_umi(record, iupac_umi, n, end):
         record.name = "{name}:UMI_{umi}".format(name=record.name, umi=umi)
     return record
 
+
 def process_fastq(args):
     """
     for every valid umi, trim while incorporating into read name.
+
+    args:
+
+    fastq       reads to process
+    umi         IUPAC sequence
+    end         5 or 3 as a string
+    top         int number of invalid sequences to output
+    verbose
     """
     umi_stats = Counter()
-    iupac = args.umi
-    u_leng = len(args.umi)
+    iupac = args.umi.upper()
+    u_leng = len(iupac)
     end = args.end
     for r in readfq(args.fastq):
         r = clip_umi(r, iupac, u_leng, end)
@@ -224,8 +268,6 @@ if __name__ == "__main__":
             help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
             help='non-duplicate UMIs at any given start position')
-    bam.add_argument('umi', metavar='UMI',
-            help='IUPAC sequence of the UMI, e.g. NNNNNV')
     bam.set_defaults(func=process_bam)
 
     if doctest.testmod(optionflags=doctest.ELLIPSIS |\
