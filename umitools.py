@@ -9,7 +9,7 @@ import doctest
 from re import findall
 from pysam import Samfile
 from toolshed import nopen
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import islice, izip
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
@@ -93,8 +93,8 @@ def process_bam(args):
 
         for chrom in chromosomes:
             print >>sys.stderr, "processing chromosome", chrom
-            umi_idx = {}
-            read_counts = {}
+            umi_idx = defaultdict(set)
+            read_counts = Counter()
 
             for read in in_bam.fetch(chrom):
                 if read.is_unmapped: continue
@@ -116,23 +116,19 @@ def process_bam(args):
                     read_start = read.pos
 
                 # add count for this start
-                try:
-                    read_counts[read_start] += 1
-                except KeyError:
-                    read_counts[read_start] = 1
+                read_counts[read_start] += 1
 
                 # check for duplicate UMI
-                try:
-                    if umi in umi_idx[read_start]:
-                        continue
-                    umi_idx[read_start].add(umi)
-                except KeyError:
-                    umi_idx[read_start] = {umi}
+                if read_start in umi_idx and \
+                    umi in umi_idx[read_start]: 
+                    continue
+
+                umi_idx[read_start].add(umi)
 
                 out_bam.write(read)
 
             # process before and after counts over chrom
-            for start, before_count in sorted(read_counts.iteritems()):
+            for start, before_count in sorted(read_counts.items()):
                 print "{chrom}\t{start}\t{stop}\t{before}\t{after}".format(
                             chrom=chrom,
                             start=start,
