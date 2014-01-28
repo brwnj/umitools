@@ -93,6 +93,7 @@ def process_bam(args):
 
         for chrom in chromosomes:
             print >>sys.stderr, "processing chromosome", chrom
+
             umi_idx = defaultdict(set)
             read_counts = Counter()
 
@@ -118,11 +119,7 @@ def process_bam(args):
                 # add count for this start
                 read_counts[read_start] += 1
 
-                # check for duplicate UMI
-                if read_start in umi_idx and \
-                    umi in umi_idx[read_start]: 
-                    continue
-
+                # keep track of unique UMIs - set eliminates duplicates
                 umi_idx[read_start].add(umi)
 
                 out_bam.write(read)
@@ -135,7 +132,6 @@ def process_bam(args):
                             stop=start+1,
                             before=before_count,
                             after=len(umi_idx[start]))
-
 
 def readfq(fq):
     with nopen(fq) as fh:
