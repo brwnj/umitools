@@ -48,18 +48,6 @@ def umi_from_name(name):
     return findall(r'UMI_([\w]*)', name)[0].strip()
 
 
-def add_strand(umi, is_reverse):
-    """
-    add strand info onto UMI, allowing pos and neg strand to saturate UMI.
-
-    >>> add_strand("GCCGCA", True)
-    'GCCGCAneg'
-    >>> add_strand("GCCGCA", False)
-    'GCCGCApos'
-    """
-    return "%sneg" % umi if is_reverse else "%spos" % umi
-
-
 def get_chromosomes(sam_header):
     """
     parse sam header to return SN values within SQ lines.
@@ -102,10 +90,6 @@ def process_bam(args):
 
                 # get the iupac umi sequence
                 umi = umi_from_name(read.qname)
-
-                # check for duplicate regardless of strand
-                # # add strand onto umi before adding to index
-                # umi = add_strand(umi, read.is_reverse)
 
                 # get actual read start3
                 # read.pos accounts for 5' soft clipping
@@ -219,9 +203,12 @@ def process_fastq(args):
         else:
             umi_stats.update([r])
     if args.verbose:
-        print >>sys.stderr, "Invalid UMI Total:   {count}".format(count=sum(umi_stats.values()))
-        print >>sys.stderr, "Unique UMIs Removed: {count}".format(count=len(list(umi_stats)))
-        print >>sys.stderr, "Top {count} Invalid UMIs:".format(count=args.top)
+        print >>sys.stderr, "Invalid UMI Total:   {count}".format(\
+                                count=sum(umi_stats.values()))
+        print >>sys.stderr, "Unique UMIs Removed: {count}".format(\
+                                count=len(list(umi_stats)))
+        print >>sys.stderr, "Top {count} Invalid UMIs:".format(\
+                                count=args.top)
         for umi, val in umi_stats.most_common(args.top):
             print >>sys.stderr, "\t".join([umi, str(val)])
 
