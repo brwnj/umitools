@@ -118,6 +118,7 @@ def process_bam(args):
                             before=before_count,
                             after=len(umi_idx[start]))
 
+
 def readfq(fq):
     with nopen(fq) as fh:
         fqclean = (x.strip("\r\n") for x in fh if x.strip())
