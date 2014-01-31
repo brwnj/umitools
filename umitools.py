@@ -103,10 +103,12 @@ def process_bam(args):
                 # add count for this start
                 read_counts[read_start] += 1
 
+                # if umi is not present, write it out
+                if read_start in umi_idx and umi not in umi_idx[read_start]:
+                    out_bam.write(read)
+
                 # keep track of unique UMIs - set eliminates duplicates
                 umi_idx[read_start].add(umi)
-
-                out_bam.write(read)
 
             # process before and after counts over chrom
             for start, before_count in sorted(read_counts.items()):
