@@ -8,7 +8,7 @@ Incorporate the UMI into the read name in order to later identify while
 processing mapped reads.
 
 ```
-python umitools.py trim --end 5 unprocessed_fastq NNNNNV > out.fq
+umitools trim --end 5 unprocessed_fastq NNNNNV > out.fq
 ```
 
 ## Remove Duplicates
@@ -17,7 +17,7 @@ For any given start site, save only one read per UMI. Writes bed3+ to stdout
 with before and after counts per start.
 
 ```
-python umitools.py rmdup unprocessed.bam out.bam > before_after.bed
+umitools rmdup unprocessed.bam out.bam > before_after.bed
 ```
 
 ##Requires
