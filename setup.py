@@ -8,6 +8,11 @@ with open('umitools/_version.py') as fp:
     exec(fp.read(), None, _locals)
 version = _locals['__version__']
 
+entry_points = """
+[console_scripts]
+umitools = umitools.umitools:main
+"""
+
 setup(name='umitools',
     version=version,
     description='Handle reads with an incorporated UMI',
@@ -16,11 +21,7 @@ setup(name='umitools',
     license='MIT',
     keywords = "bioinformatics",
     url='https://github.com/brwnjm/umitools',
-    entry_points={
-        'console_scripts': [
-            'umitools = umitools.umitools:main',
-        ]
-    },
+    entry_points=entry_points,
     packages=['umitools'],
     install_requires=['pysam', 'toolshed'],
     zip_safe=False,
