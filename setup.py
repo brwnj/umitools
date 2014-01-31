@@ -21,6 +21,7 @@ setup(name='umitools',
             'umitools = umitools.umitools:main',
         ]
     },
+    packages=['umitools'],
     install_requires=['pysam', 'toolshed'],
     zip_safe=False,
     long_description=open('README.md').read(),
