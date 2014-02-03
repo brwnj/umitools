@@ -90,7 +90,7 @@ def process_bam(args):
                 # get the iupac umi sequence
                 umi = umi_from_name(read.qname)
 
-                # get actual read start3
+                # get actual read start
                 # read.pos accounts for 5' soft clipping
                 if read.is_reverse:
                     # read.alen alignment length accounting for 3' soft clipping
@@ -99,18 +99,16 @@ def process_bam(args):
                 else:
                     read_start = read.pos
 
-                # add count for this start
+                # add count for this start; counts all reads
                 read_counts[read_start] += 1
 
-                # if umi is not present, write it out
-                if read_start not in umi_idx:
-                    out_bam.write(read)
-
-                elif umi not in umi_idx[read_start]:
-                    out_bam.write(read)
+                # check if UMI seen
+                if umi in umi_idx[read_start]: continue
 
                 # keep track of unique UMIs - set eliminates duplicates
                 umi_idx[read_start].add(umi)
+
+                out_bam.write(read)
 
             # process before and after counts over chrom
             for start, before_count in sorted(read_counts.items()):
