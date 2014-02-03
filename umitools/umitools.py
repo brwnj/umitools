@@ -103,7 +103,10 @@ def process_bam(args):
                 read_counts[read_start] += 1
 
                 # if umi is not present, write it out
-                if read_start in umi_idx and umi not in umi_idx[read_start]:
+                if read_start not in umi_idx:
+                    out_bam.write(read)
+
+                elif umi not in umi_idx[read_start]:
                     out_bam.write(read)
 
                 # keep track of unique UMIs - set eliminates duplicates
