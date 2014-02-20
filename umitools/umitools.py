@@ -47,25 +47,6 @@ def umi_from_name(name):
     return findall(r'UMI_([\w]*)', name)[0].strip()
 
 
-def get_chromosomes(sam_header):
-    """
-    parse sam header to return SN values within SQ lines.
-    """
-    chromosomes = []
-
-    for line in sam_header.split("\n"):
-        if not line.startswith("@SQ"): continue
-        line = line.strip().split("\t")
-
-        for token in line:
-            if not token.startswith("SN"): continue
-            chromosome = token.split(":", 1)[1]
-            chromosomes.append(chromosome)
-
-    assert len(chromosomes) > 0
-    return chromosomes
-
-
 def process_bam(args):
     """
     removes duplicate reads characterized by their UMI at any given start
@@ -76,9 +57,8 @@ def process_bam(args):
     """
     with Samfile(args.abam, 'rb') as in_bam, \
             Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
-        chromosomes = get_chromosomes(in_bam.text)
 
-        for chrom in chromosomes:
+        for chrom in in_bam.references:
             print >>sys.stderr, "processing chromosome", chrom
 
             umi_idx = defaultdict(set)
