@@ -92,12 +92,9 @@ def process_bam(args):
 
             # process before and after counts over chrom
             for start, before_count in sorted(read_counts.items()):
-                print "{chrom}\t{start}\t{stop}\t{before}\t{after}".format(
-                            chrom=chrom,
-                            start=start,
-                            stop=start+1,
-                            before=before_count,
-                            after=len(umi_idx[start]))
+                # chrom, start, stop, before, after
+                fields = [chrom, start, start+1, before_count, len(umi_idx[start])]
+                print "\t".join([str(f) for f in fields])
 
 
 def readfq(fq):
