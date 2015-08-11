@@ -3,6 +3,8 @@
 """
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 """
+from __future__ import print_function
+
 import os
 import sys
 import doctest
@@ -17,9 +19,9 @@ from ._version import __version__
 
 os.environ['TERM'] = 'linux'
 
-IUPAC = {"A":"A","T":"T","C":"C","G":"G","R":"GA","Y":"TC",
-         "M":"AC","K":"GT","S":"GC","W":"AT","H":"ACT",
-         "B":"GTC","V":"GCA","D":"GAT","N":"GATC"}
+IUPAC = {"A": "A", "T": "T", "C": "C", "G": "G", "R": "GA", "Y": "TC",
+         "M": "AC", "K": "GT", "S": "GC", "W": "AT", "H": "ACT",
+         "B": "GTC", "V": "GCA", "D": "GAT", "N": "GATC"}
 
 
 class Fastq(object):
@@ -34,7 +36,7 @@ class Fastq(object):
 
     def __str__(self):
         return "@{name}\n{seq}\n+\n{qual}".format(name=self.name,
-                seq=self.seq, qual=self.qual)
+                                                  seq=self.seq, qual=self.qual)
 
 
 def umi_from_name(name):
@@ -59,13 +61,14 @@ def process_bam(args):
             Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
 
         for chrom in in_bam.references:
-            print >>sys.stderr, "processing chromosome", chrom
+            print("processing chromosome", chrom, file=sys.stderr)
 
             umi_idx = defaultdict(set)
             read_counts = Counter()
 
             for read in in_bam.fetch(chrom):
-                if read.is_unmapped: continue
+                if read.is_unmapped:
+                    continue
 
                 # get the iupac umi sequence
                 umi = umi_from_name(read.qname)
@@ -83,7 +86,8 @@ def process_bam(args):
                 read_counts[read_start] += 1
 
                 # check if UMI seen
-                if umi in umi_idx[read_start]: continue
+                if umi in umi_idx[read_start]:
+                    continue
 
                 # keep track of unique UMIs - set eliminates duplicates
                 umi_idx[read_start].add(umi)
@@ -92,9 +96,7 @@ def process_bam(args):
 
             # process before and after counts over chrom
             for start, before_count in sorted(read_counts.items()):
-                # chrom, start, stop, before, after
-                fields = [chrom, start, start+1, before_count, len(umi_idx[start])]
-                print "\t".join([str(f) for f in fields])
+                print(chrom, start, start + 1, before_count, len(umi_idx[start]), sep="\t")
 
 
 def readfq(fq):
@@ -102,7 +104,8 @@ def readfq(fq):
         fqclean = (x.strip("\r\n") for x in fh if x.strip())
         while True:
             rd = [x for x in islice(fqclean, 4)]
-            if not rd: raise StopIteration
+            if not rd:
+                raise StopIteration
             assert all(rd) and len(rd) == 4
             yield Fastq(rd)
 
@@ -118,7 +121,7 @@ def valid_umi(iupac, umi):
     """
     for code, base in izip(iupac, umi):
         try:
-            if not base in IUPAC[code]:
+            if base not in IUPAC[code]:
                 return False
         except KeyError:
             return False
@@ -153,8 +156,8 @@ def clip_umi(record, iupac_umi, n, end):
     try:
         name, pair = record.name.split(" ", 1)
         record.name = "{name}:UMI_{umi} {pair}".format(name=name,
-                                                        umi=umi,
-                                                        pair=pair)
+                                                       umi=umi,
+                                                       pair=pair)
     except ValueError:
         record.name = "{name}:UMI_{umi}".format(name=record.name, umi=umi)
     return record
@@ -165,7 +168,6 @@ def process_fastq(args):
     for every valid umi, trim while incorporating into read name.
 
     args:
-
     fastq       reads to process
     umi         IUPAC sequence
     end         5 or 3 as a string
@@ -179,18 +181,15 @@ def process_fastq(args):
     for r in readfq(args.fastq):
         r = clip_umi(r, iupac, u_leng, end)
         if type(r) is Fastq:
-            print r
+            print(r)
         else:
             umi_stats.update([r])
     if args.verbose:
-        print >>sys.stderr, "Invalid UMI Total:   {count}".format(\
-                                count=sum(umi_stats.values()))
-        print >>sys.stderr, "Unique UMIs Removed: {count}".format(\
-                                count=len(list(umi_stats)))
-        print >>sys.stderr, "Top {count} Invalid UMIs:".format(\
-                                count=args.top)
+        print("Invalid UMI Total:", sum(umi_stats.values()), file=sys.stderr)
+        print("Unique UMIs Removed:", len(list(umi_stats)), file=sys.stderr)
+        print("Top %d Invalid UMIs:" % args.top, file=sys.stderr)
         for umi, val in umi_stats.most_common(args.top):
-            print >>sys.stderr, "\t".join([umi, str(val)])
+            print(umi, val, sep="\t", file=sys.stderr)
 
 
 def main():
@@ -198,35 +197,32 @@ def main():
     subp = p.add_subparsers(help='commands')
 
     # fastq processing
-    fastq = subp.add_parser('trim', description="Trims the UMI sequence from \
-            the read, incorporating the unique sequence in the read name \
-            facilitating filtering of the alignments.",
-            formatter_class=ArgumentDefaultsHelpFormatter,
-            help="trim UMI and incorporate sequence into read name")
+    fastq = subp.add_parser('trim', description=("Trims the UMI sequence from the read, incorporating the unique "
+                                                 "sequence in the read name facilitating filtering of the alignments."),
+                            formatter_class=ArgumentDefaultsHelpFormatter,
+                            help="trim UMI and incorporate sequence into read name")
     fastq.add_argument('fastq', metavar='FASTQ',
-            help='reads with untrimmed UMI')
+                       help='reads with untrimmed UMI')
     fastq.add_argument('umi', metavar='UMI',
-            help='IUPAC UMI sequence, e.g. NNNNNV')
+                       help='IUPAC UMI sequence, e.g. NNNNNV')
     fastq.add_argument('--end', choices=['5', '3'], default="5",
-            help="UMI location on the read")
+                       help="UMI location on the read")
     fastq.add_argument('--verbose', action='store_true',
-            help="print UMI stats to stderr")
+                       help="print UMI stats to stderr")
     fastq.add_argument('--top', type=int, default=10,
-            help="when verbose, print this many of the top filtered \
-            UMI sequences")
+                       help="when verbose, print this many of the top filtered UMI sequences")
     fastq.set_defaults(func=process_fastq)
 
     # bam processing
-    bam = subp.add_parser('rmdup', description="Removes duplicate reads, that \
-            were previously characterized by their UMI, at any given start \
-            location. Coverage differences before and after are written to \
-            STDOUT as BED3+.",
-            formatter_class=ArgumentDefaultsHelpFormatter,
-            help="remove duplicate UMI entries from all start positions")
+    bam = subp.add_parser('rmdup', description=("Removes duplicate reads, that were previously characterized by "
+                                                "their UMI, at any given start location. Coverage differences before "
+                                                "and after are written to STDOUT as BED3+."),
+                          formatter_class=ArgumentDefaultsHelpFormatter,
+                          help="remove duplicate UMI entries from all start positions")
     bam.add_argument('abam', metavar='INPUT_BAM',
-            help='bam with UMI in read name')
+                     help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
-            help='non-duplicate UMIs at any given start position')
+                     help='non-duplicate UMIs at any given start position')
     bam.set_defaults(func=process_bam)
 
     args = p.parse_args()
@@ -234,6 +230,5 @@ def main():
 
 
 if __name__ == "__main__":
-    if doctest.testmod(optionflags=doctest.ELLIPSIS |\
-                                   doctest.NORMALIZE_WHITESPACE).failed == 0:
+    if doctest.testmod(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE).failed == 0:
         main()
