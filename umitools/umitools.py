@@ -5,23 +5,38 @@ Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 """
 from __future__ import print_function
 
+import doctest
+import editdistance
 import os
 import sys
-import doctest
-from re import findall
-from pysam import Samfile
-from toolshed import nopen
-from itertools import islice, izip
-from collections import Counter, defaultdict
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from collections import Counter, defaultdict
+from itertools import islice, izip
+from pysam import Samfile
+from re import findall
+from toolshed import nopen
 
 from ._version import __version__
 
 os.environ['TERM'] = 'linux'
 
-IUPAC = {"A": "A", "T": "T", "C": "C", "G": "G", "R": "GA", "Y": "TC",
-         "M": "AC", "K": "GT", "S": "GC", "W": "AT", "H": "ACT",
-         "B": "GTC", "V": "GCA", "D": "GAT", "N": "GATC"}
+IUPAC = {
+    "A": "A",
+    "T": "T",
+    "C": "C",
+    "G": "G",
+    "R": "GA",
+    "Y": "TC",
+    "M": "AC",
+    "K": "GT",
+    "S": "GC",
+    "W": "AT",
+    "H": "ACT",
+    "B": "GTC",
+    "V": "GCA",
+    "D": "GAT",
+    "N": "GATC"
+}
 
 
 class Fastq(object):
@@ -32,11 +47,10 @@ class Fastq(object):
         assert len(self.seq) == len(self.qual)
 
     def __repr__(self):
-        return "Fastq({name})".format(name=self.name)
+        return "Fastq(%s)" % self.name
 
     def __str__(self):
-        return "@{name}\n{seq}\n+\n{qual}".format(name=self.name,
-                                                  seq=self.seq, qual=self.qual)
+        return "@%s\n%s\n+\n%s" % (self.name, self.seq, self.qual)
 
 
 def umi_from_name(name):
@@ -49,16 +63,36 @@ def umi_from_name(name):
     return findall(r'UMI_([\w]*)', name)[0].strip()
 
 
+def passing_distances(subject, target_set, n):
+    """
+    >>> s = "ACTGA"
+    >>> ts_1 = {"ACTGG"}
+    >>> ts_2 = {"ACTCC", "ACTGG"}
+    >>> ts_3 = {"ACTCC", "ACTTT"}
+    >>> n = 1
+    >>> passing_distances(s, ts_1, n)
+    True
+    >>> passing_distances(s, ts_2, n)
+    True
+    >>> passing_distances(s, ts_3, n)
+    False
+    """
+    for target in target_set:
+        if editdistance.distance(target, subject) <= n:
+            return True
+    return False
+
+
 def process_bam(args):
     """
     removes duplicate reads characterized by their UMI at any given start
     location.
 
-    abam    input bam with potential duplicate UMIs
-    bbam    output bam after removing duplicate UMIs
+    abam        input bam with potential duplicate UMIs
+    bbam        output bam after removing duplicate UMIs
+    mismatches  allowable edit distance between UMIs
     """
-    with Samfile(args.abam, 'rb') as in_bam, \
-            Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
+    with Samfile(args.abam, 'rb') as in_bam, Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
 
         for chrom in in_bam.references:
             print("processing chromosome", chrom, file=sys.stderr)
@@ -87,6 +121,10 @@ def process_bam(args):
 
                 # check if UMI seen
                 if umi in umi_idx[read_start]:
+                    continue
+                elif args.mismatches > 0 and passing_distances(umi, umi_idx[read_start], args.mismatches):
+                    # add UMI as unique hit
+                    umi_idx[read_start].add(umi)
                     continue
 
                 # keep track of unique UMIs - set eliminates duplicates
@@ -223,6 +261,8 @@ def main():
                      help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
                      help='non-duplicate UMIs at any given start position')
+    bam.add_argument('-m', '--mismatches', default=0, type=int,
+                     help="allowable mismatches when comparing UMIs at any given start location")
     bam.set_defaults(func=process_bam)
 
     args = p.parse_args()
