@@ -29,5 +29,5 @@ IUPAC sequence you're using.
 ##Requires
 
 ```
-pip install pysam
+pip install pysam editdist
 ```
