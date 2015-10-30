@@ -140,7 +140,7 @@ def process_bam(abam, bbam, mismatches=0):
         bbam (str): Output bam after removing duplicate UMIs
         mismatches (Optional[int]): Allowable edit distance between UMIs
     """
-    with Samfile(args.abam, 'rb') as in_bam, Samfile(args.bbam, 'wb', template=in_bam) as out_bam:
+    with Samfile(abam, 'rb') as in_bam, Samfile(bbam, 'wb', template=in_bam) as out_bam:
 
         for chrom in in_bam.references:
             print("processing chromosome", chrom, file=sys.stderr)
@@ -174,7 +174,7 @@ def process_bam(abam, bbam, mismatches=0):
                 # check if UMI seen
                 if umi in umi_idx[read_start]:
                     continue
-                elif args.mismatches > 0 and passing_distances(umi, umi_idx[read_start], args.mismatches):
+                elif mismatches > 0 and passing_distances(umi, umi_idx[read_start], mismatches):
                     # add UMI as unique hit
                     umi_idx[read_start].add(umi)
                     continue
@@ -232,7 +232,7 @@ def valid_umi(iupac, umi):
 
 
 def clip_umi(record, iupac_umi, n, end):
-    """Removed UMI sequence from read, trims respective length from qual, then appends UMI onto read name.
+    """Removes UMI sequence from read, trims respective length from qual, then appends UMI onto read name.
 
     Args:
         record (Fastq): `Fastq` record
