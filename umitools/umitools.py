@@ -5,7 +5,7 @@ Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 """
 from __future__ import print_function
 
-import editdistance
+import editdist
 import gzip
 import os
 import re
@@ -44,14 +44,33 @@ UMI_REGEX = re.compile(r'UMI_([\w]*)')
 gzopen = lambda f: gzip.open(f) if f.endswith(".gz") else open(f)
 
 
+class UMINotFound(Exception):
+    pass
+
+
 class Fastq(object):
     """FASTQ record. Holds record of name, sequence, and quality scores.
+
+    >>> fq = Fastq(["@illumina_naming_scheme", "ACTGACTG", "+", "KKKKKKKK"])
+    >>> fq.name, fq.seq, fq.qual
+    ('illumina_naming_scheme', 'ACTGACTG', 'KKKKKKKK')
+    >>> fq
+    Fastq(illumina_naming_scheme)
+    >>> print(fq)
+    @illumina_naming_scheme
+    ACTGACTG
+    +
+    KKKKKKKK
+    >>> fq = Fastq(["@fail", "ACTGACTG", "+", "KKK"]) # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+     ...
+    AssertionError: Seq and Qual vary in length
     """
     def __init__(self, args):
         self.name = args[0][1:]
         self.seq = args[1]
         self.qual = args[3]
-        assert len(self.seq) == len(self.qual)
+        assert len(self.seq) == len(self.qual), "Seq and Qual vary in length"
 
     def __repr__(self):
         return "Fastq(%s)" % self.name
@@ -71,8 +90,16 @@ def umi_from_name(name):
 
     >>> umi_from_name("cluster_1017333:UMI_GCCGCA")
     'GCCGCA'
+    >>> umi_from_name("TEST") # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+     ...
+    UMINotFound: TEST
     """
-    return UMI_REGEX.findall(name)[0].strip()
+    try:
+        umi = UMI_REGEX.findall(name)[0].strip()
+    except IndexError:
+        raise UMINotFound(name)
+    return umi
 
 
 def passing_distances(query, targets, n):
@@ -86,6 +113,7 @@ def passing_distances(query, targets, n):
     Returns:
         bool
 
+    >>> import editdist
     >>> s = "ACTGA"
     >>> ts_1 = {"ACTGG"}
     >>> ts_2 = {"ACTCC", "ACTGG"}
@@ -99,7 +127,7 @@ def passing_distances(query, targets, n):
     False
     """
     for target in targets:
-        if editdistance.distance(target, query) <= n:
+        if editdist.distance(target, query) <= n:
             return True
     return False
 
@@ -125,7 +153,11 @@ def process_bam(abam, bbam, mismatches=0):
                     continue
 
                 # get the iupac umi sequence
-                umi = umi_from_name(read.qname)
+                try:
+                    umi = umi_from_name(read.qname)
+                except UMINotFound:
+                    print("You may be processing alignments that haven't been annotated with UMIs!", file=sys.stderr)
+                    raise
 
                 # get actual read start
                 # read.pos accounts for 5' soft clipping
@@ -212,11 +244,21 @@ def clip_umi(record, iupac_umi, n, end):
         Fastq else str: The record or the failed UMI sequence
 
     >>> fq = Fastq(["@cluster_455 2","GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
-    >>> clip_umi(fq, "NNNNNV", 6, 5)
+    >>> r = clip_umi(fq, "NNNNNV", 6, 5)
+    >>> r
     Fastq(cluster_455:UMI_GGGGGA 2)
+    >>> r.seq
+    'GCCACGAGGTGTGTTTTATTTTCATTATTC'
     >>> fq = Fastq(["@cluster_455 2","GGXXGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
-    >>> clip_umi(fq, "NNNNNV", 6, 5)
+    >>> r = clip_umi(fq, "NNNNNV", 6, 5)
+    >>> r
     'GGXXGA'
+    >>> fq = Fastq(["@cluster_455 2","GGXXGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
+    >>> r = clip_umi(fq, "NNNNN", 5, 3)
+    >>> r.seq
+    'GGXXGAGCCACGAGGTGTGTTTTATTTTCAT'
+    >>> r.qual
+    'C===>=B=@:<;4A;8=9?6EEC0?DDA72B'
     """
     if end == 5:
         umi = record.seq[:n]
