@@ -1,5 +1,7 @@
 #umitools
 
+[![DOI](https://zenodo.org/badge/19296/brwnj/umitools.svg)](https://zenodo.org/badge/latestdoi/19296/brwnj/umitools)
+
 Tools to handle reads sequenced with unique molecular identifiers (UMIs).
 
 ## Trim the UMI
