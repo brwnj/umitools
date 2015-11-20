@@ -6,6 +6,7 @@ try:
 except ImportError:
     from io import StringIO
 from nose.tools import raises
+from pysam import Samfile
 
 from umitools.umitools import is_indexed, process_bam, process_fastq, UMINotFound
 
@@ -51,45 +52,96 @@ def test_process_fastq():
     assert it.next().strip() == "NGCAAGGN	1"
 
 
-def test_indexed_bam():
-$ umitools rmdup unsorted.bam tmp.bam
-[E::hts_idx_push] unsorted positions
-index not found for unsorted.bam and indexing failed
+@raises(SystemExit)
+def test_indexed_unsorted_bam():
+    bam = os.path.join(DATA, "unsorted.bam")
+    is_indexed(bam)
 
-def test_process_bam():
-$ umitools rmdup --mismatches 1 ordered_umi.bam tmp.bam
-processing chromosome 1
-1	9	10	4	2
-1	11	12	2	1
-1	29	30	2	1
 
-$ samtools view tmp.bam
-read8:UMI_ATTCAGGG	16	1	5	255	25M	=	142618765	25	CGACCCACTCCGCCATTTTCATCCG	IIGIIIHIGIIFIIIIIIIGIGIII	NM:i:0
-read1:UMI_AAAAAGGG	1	1	10	255	25M	=	142618765	25	CGACCCACTCCGCCATTTTCATCCG	IIGIIIHIGIIFIIIIIIIGIGIII	NM:i:0
-read4:UMI_AAAGGGGG	1	1	10	255	25M	=	142618765	25	CGACCCACTCCGCCATTTTCATCCG	IIGIIIHIGIIFIIIIIIIGIGIII	NM:i:0
-read5:UMI_ATTTAGGG	1	1	12	255	25M	=	142618765	25	CGACCCACTCCGCCATTTTCATCCG	IIGIIIHIGIIFIIIIIIIGIGIII	NM:i:0
+def test_indexed_sorted_bam():
+    bam = os.path.join(DATA, "ordered_umi.bam")
+    bai = os.path.join(DATA, "ordered_umi.bam.bai")
+    if os.path.exists(bai):
+        os.remove(bai)
+    is_indexed(bam)
+    assert os.path.exists(bai)
+    os.remove(bai)
 
-for line in Samfile("tmp.bam"):
-    print line.pos, line.qname
-   ....:
-4 read8:UMI_ATTCAGGG
-9 read1:UMI_AAAAAGGG
-9 read4:UMI_AAAGGGGG
-11 read5:UMI_ATTTAGGG
+
+def test_process_bam_no_mismatches():
+    tbam = os.path.join(DATA, "tmp.bam")
+    bam = os.path.join(DATA, "ordered_umi.bam")
+    if os.path.exists(tbam):
+        os.remove(tbam)
+    with captured_output() as (out, err):
+        process_bam(bam, tbam, mismatches=0)
+    assert os.path.exists(tbam)
+    it = iter(out.getvalue().split("\n"))
+    assert it.next().strip() == "1\t9\t10\t4\t4"
+    assert it.next().strip() == "1\t11\t12\t2\t1"
+    assert it.next().strip() == "1\t29\t30\t2\t2"
+
+    bam_reader = Samfile(tbam)
+    it = iter(bam_reader)
+    r = it.next()
+    assert r.pos == 4
+    assert r.qname == "read8:UMI_ATTCAGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read1:UMI_AAAAAGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read2:UMI_AAAATGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read3:UMI_AAAACGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read4:UMI_AAAGGGGG"
+    r = it.next()
+    assert r.pos == 11
+    assert r.qname == "read5:UMI_ATTTAGGG"
+    r = it.next()
+    assert r.pos == 29
+    assert r.qname == "read7:UMI_ATTTAGGG"
+    bam_reader.close()
+    os.remove(tbam)
+
+
+def test_process_bam_mismatches():
+    tbam = os.path.join(DATA, "tmp.bam")
+    bam = os.path.join(DATA, "ordered_umi.bam")
+    if os.path.exists(tbam):
+        os.remove(tbam)
+    with captured_output() as (out, err):
+        process_bam(bam, tbam, mismatches=1)
+    assert os.path.exists(tbam)
+    it = iter(out.getvalue().split("\n"))
+    assert it.next().strip() == "1\t9\t10\t4\t2"
+    assert it.next().strip() == "1\t11\t12\t2\t1"
+    assert it.next().strip() == "1\t29\t30\t2\t1"
+
+    bam_reader = Samfile(tbam)
+    it = iter(bam_reader)
+    r = it.next()
+    assert r.pos == 4
+    assert r.qname == "read8:UMI_ATTCAGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read1:UMI_AAAAAGGG"
+    r = it.next()
+    assert r.pos == 9
+    assert r.qname == "read4:UMI_AAAGGGGG"
+    r = it.next()
+    assert r.pos == 11
+    assert r.qname == "read5:UMI_ATTTAGGG"
+    bam_reader.close()
+    os.remove(tbam)
 
 
 @raises(UMINotFound)
 def test_process_bam_raises():
-$ umitools rmdup --mismatches 1 no_umi.bam tmp.bam
-processing chromosome 1
-You may be processing alignments that haven't been annotated with UMIs!
-Traceback (most recent call last):
-  File "/usr/local/bin/umitools", line 9, in <module>
-    load_entry_point('umitools==1.0.3', 'console_scripts', 'umitools')()
-  File "/Users/brownj/devel/umitools/umitools/umitools.py", line 368, in main
-    process_bam(args.abam, args.bbam, mismatches=args.mismatches)
-  File "/Users/brownj/devel/umitools/umitools/umitools.py", line 169, in process_bam
-    umi = umi_from_name(read.qname)
-  File "/Users/brownj/devel/umitools/umitools/umitools.py", line 111, in umi_from_name
-    raise UMINotFound(name)
-umitools.umitools.UMINotFound: read8
+    bam = os.path.join(DATA, "no_umi.bam")
+    tbam = os.path.join(DATA, "tmp.bam")
+    with captured_output() as (o, e):
+        process_bam(bam, tbam)
