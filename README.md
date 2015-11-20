@@ -20,8 +20,14 @@ with before and after counts per start.
 umitools rmdup unprocessed.bam out.bam > before_after.bed
 ```
 
+Specifying `--mismatches` will, for a given start site, merge all UMIs within that
+edit distance into a single unique hit. For example, if a new UMI is within a single
+mismatch of any existing observed UMIs for a start position, it will be merged and
+considered a duplicate. The mismatch can occur at any position, regardless of the
+IUPAC sequence you're using.
+
 ##Requires
 
 ```
-pip install toolshed pysam
+pip install pysam editdist
 ```
