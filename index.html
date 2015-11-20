@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Umitools by brwnj</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <meta name="viewport" content="width=device-width">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Umitools</h1>
+        <p>Tools to handle reads sequenced with unique molecular identifiers (UMIs).</p>
+
+        <p class="view"><a href="https://github.com/brwnj/umitools">View the Project on GitHub <small>brwnj/umitools</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/brwnj/umitools/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/brwnj/umitools/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/brwnj/umitools">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a id="umitools" class="anchor" href="#umitools" aria-hidden="true"><span class="octicon octicon-link"></span></a>umitools</h1>
+
+<p><a href="https://zenodo.org/badge/latestdoi/19296/brwnj/umitools"><img src="https://zenodo.org/badge/19296/brwnj/umitools.svg" alt="DOI"></a></p>
+
+<p>Tools to handle reads sequenced with unique molecular identifiers (UMIs).</p>
+
+<h2>
+<a id="trim-the-umi" class="anchor" href="#trim-the-umi" aria-hidden="true"><span class="octicon octicon-link"></span></a>Trim the UMI</h2>
+
+<p>Incorporate the UMI into the read name in order to later identify while
+processing mapped reads.</p>
+
+<pre><code>umitools trim --end 5 unprocessed_fastq NNNNNV &gt; out.fq
+</code></pre>
+
+<h2>
+<a id="remove-duplicates" class="anchor" href="#remove-duplicates" aria-hidden="true"><span class="octicon octicon-link"></span></a>Remove Duplicates</h2>
+
+<p>For any given start site, save only one read per UMI. Writes bed3+ to stdout
+with before and after counts per start.</p>
+
+<pre><code>umitools rmdup unprocessed.bam out.bam &gt; before_after.bed
+</code></pre>
+
+<p>Specifying <code>--mismatches</code> will, for a given start site, merge all UMIs within that
+edit distance into a single unique hit. For example, if a new UMI is within a single
+mismatch of any existing observed UMIs for a start position, it will be merged and
+considered a duplicate. The mismatch can occur at any position, regardless of the
+IUPAC sequence you're using.</p>
+
+<h2>
+<a id="requires" class="anchor" href="#requires" aria-hidden="true"><span class="octicon octicon-link"></span></a>Requires</h2>
+
+<pre><code>pip install pysam editdist
+</code></pre>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/brwnj">brwnj</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
