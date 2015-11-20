@@ -13,7 +13,7 @@ import sys
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import Counter, defaultdict
 from itertools import islice, izip
-from pysam import Samfile
+from pysam import index, Samfile
 
 try:
     from itertools import izip as zip
@@ -79,6 +79,16 @@ class Fastq(object):
         return "@%s\n%s\n+\n%s" % (self.name, self.seq, self.qual)
 
 
+def is_indexed(bam):
+    if not os.path.exists("%s.bai" % bam):
+        # this returns nothing even when it fails
+        index(bam)
+        if not os.path.exists("%s.bai" % bam):
+            print("index not found for %s and indexing failed" % bam)
+            sys.exit(1)
+    return True
+
+
 def umi_from_name(name):
     """Extracts the UMI sequence from the read name.
 
@@ -102,7 +112,7 @@ def umi_from_name(name):
     return umi
 
 
-def passing_distances(query, targets, n):
+def is_similar(query, targets, n):
     """Tests target set of sequences to the query.
 
     Args:
@@ -119,16 +129,17 @@ def passing_distances(query, targets, n):
     >>> ts_2 = {"ACTCC", "ACTGG"}
     >>> ts_3 = {"ACTCC", "ACTTT"}
     >>> n = 1
-    >>> passing_distances(s, ts_1, n)
+    >>> is_similar(s, ts_1, n)
     True
-    >>> passing_distances(s, ts_2, n)
+    >>> is_similar(s, ts_2, n)
     True
-    >>> passing_distances(s, ts_3, n)
+    >>> is_similar(s, ts_3, n)
     False
     """
-    for target in targets:
-        if editdist.distance(target, query) <= n:
-            return True
+    if targets:
+        for target in targets:
+            if editdist.distance(target, query) <= n:
+                return True
     return False
 
 
@@ -140,6 +151,7 @@ def process_bam(abam, bbam, mismatches=0):
         bbam (str): Output bam after removing duplicate UMIs
         mismatches (Optional[int]): Allowable edit distance between UMIs
     """
+    is_indexed(abam)
     with Samfile(abam, 'rb') as in_bam, Samfile(bbam, 'wb', template=in_bam) as out_bam:
 
         for chrom in in_bam.references:
@@ -174,9 +186,10 @@ def process_bam(abam, bbam, mismatches=0):
                 # check if UMI seen
                 if umi in umi_idx[read_start]:
                     continue
-                elif mismatches > 0 and passing_distances(umi, umi_idx[read_start], mismatches):
-                    # add UMI as unique hit
-                    umi_idx[read_start].add(umi)
+
+                # check if UMI is similar enough to another that has been seen
+                if mismatches > 0 and is_similar(umi, umi_idx[read_start], mismatches):
+                    # do not count; group similar UMIs into one
                     continue
 
                 # keep track of unique UMIs - set eliminates duplicates
@@ -350,9 +363,9 @@ def main():
 
     args = p.parse_args()
     if args.command == 'trim':
-        process_fastq(args.fastq, args.umi, args.end, args.verbose, args.top)
+        process_fastq(args.fastq, args.umi, end=args.end, verbose=args.verbose, top=args.top)
     elif args.command == 'rmdup':
-        process_bam(args.abam, args.bbam, args.mismatches)
+        process_bam(args.abam, args.bbam, mismatches=args.mismatches)
 
 
 if __name__ == "__main__":
