@@ -28,8 +28,33 @@ mismatch of any existing observed UMIs for a start position, it will be merged a
 considered a duplicate. The mismatch can occur at any position, regardless of the
 IUPAC sequence you're using.
 
-##Requires
+## Installation
+
+umitools has two requirements: [pysam][] and [editdist][].
+Use pip to install [pysam].
 
 ```
-pip install pysam editdist
+pip install pysam
 ```
+
+[editdist] has to be downloaded and installed from source ([Downloads page][editdist-download]).
+
+```
+wget https://py-editdist.googlecode.com/files/py-editdist-0.3.tar.gz
+tar xzf py-editdist-0.3.tar.gz
+cd py-editdist-0.3/
+python setup.py install
+```
+
+Finally download and install umitools from source.
+
+```
+wget -O umitools-master.zip https://github.com/brwnj/umitools/archive/master.zip
+unzip umitools-master.zip
+cd umitools-master
+python setup.py install
+```
+
+[pysam]: https://pypi.python.org/pypi/pysam
+[editdist]: https://pypi.python.org/pypi/editdist/0.1
+[editdist-download]: https://code.google.com/p/py-editdist/downloads/list
