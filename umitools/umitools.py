@@ -341,7 +341,7 @@ def main():
                        help='reads with untrimmed UMI')
     fastq.add_argument('umi', metavar='UMI',
                        help='IUPAC UMI sequence, e.g. NNNNNV')
-    fastq.add_argument('--end', choices=['5', '3'], default=5, type=int,
+    fastq.add_argument('--end', choices=[5, 3], default=5, type=int,
                        help="UMI location on the read")
     fastq.add_argument('--verbose', action='store_true',
                        help="print UMI stats to stderr")
