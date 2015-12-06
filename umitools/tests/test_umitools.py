@@ -25,7 +25,7 @@ def captured_output():
         sys.stdout, sys.stderr = old_out, old_err
 
 
-def test_process_fastq():
+def test_process_fastq_without_invalid():
     umi = "NNNNNGGG"
     end = 5
     verbose = True
@@ -50,6 +50,40 @@ def test_process_fastq():
     assert it.next().strip() == "Unique UMIs Removed: 1"
     assert it.next().strip() == "Top 6 Invalid UMIs:"
     assert it.next().strip() == "NGCAAGGN	1"
+
+
+def test_process_fastq_with_invalid():
+    umi = "NNNNNGGG"
+    end = 5
+    verbose = True
+    top = 6
+    invalid_fastq = os.path.join(DATA, "invalid.fastq")
+    with captured_output() as (out, err):
+        process_fastq(os.path.join(DATA, "t.fastq"), umi, end=end, invalid=invalid_fastq, verbose=verbose, top=top)
+    it = iter(out.getvalue().split("\n"))
+    assert it.next().strip() == "@HWI-700819F:306:C72JMACXX:2:1101:1095:2117:UMI_ATTTAGGG 1:N:0:ACGAGTCT"
+    assert it.next().strip() == "TCTTCCAAGGTGACAAATTATATAATGAAAAAGCTGTTACCAGAAACTTTCAGCAGACATCTTATTGATAATATTTAATCAGCATTCTCATT"
+    assert it.next().strip() == "+"
+    assert it.next().strip() == "FFFFFIFFFBBBFFFIIIFFIIIIIIFIIFIIIFFFFFIIIFFFFFFFIIIIIFFIIIIIIIIIFIIBFFFFFBFBFFFFFFFFBFFFFFFF"
+    assert it.next().strip() == "@HWI-700819F:306:C72JMACXX:2:1101:1059:2161:UMI_AGATAGGG 1:N:0:ACGAGTCT"
+    assert it.next().strip() == "GGTAGCTCACTTCCACTATGTCCTATCAATAGGAGCTGTATTTGCCATCATAGGAGGCTTCATTCACTGATTTCCCCTATTCTCAGGCTACA"
+    assert it.next().strip() == "+"
+    assert it.next().strip() == "FFBFFIFFIIBFFFBFF<FFBFFFFIFFBFFFIIIBFF<BFFFFI7BFB<77B<FFFFFFFF<07BBFBBBBFFBBBBBBBBFFFB<B7<B<"
+    assert it.next().strip() == "@HWI-700819F:306:C72JMACXX:2:1101:1153:2164:UMI_TGATAGGG 1:N:0:ACGAGTCT"
+    assert it.next().strip() == "ATCTAATGGTAAATTGATTACCTAATTAGCTGTCTCTTATACACATCTGACGCACGAGTCTTCGTATGCCGTCTTCTGCTTGAAAAAAAAAA"
+    assert it.next().strip() == "+"
+    assert it.next().strip() == "FFFFFIIIIFFFIIIIFIIFFIIIIIIBFIIIFFIIIIFFBBFFFFBFFIFIIIIIIIFBBBFFBFFFFFFBFFBBFB<<B<7<BBB#####"
+    it = iter(err.getvalue().split("\n"))
+    assert it.next().strip() == "Invalid UMI Total: 1"
+    assert it.next().strip() == "Unique UMIs Removed: 1"
+    assert it.next().strip() == "Top 6 Invalid UMIs:"
+    assert it.next().strip() == "NGCAAGGN	1"
+    with open(invalid_fastq) as fh:
+        it = iter(fh)
+        assert it.next().strip() == "@HWI-700819F:306:C72JMACXX:2:1101:1902:2060:UMI_NGCAAGGN 1:N:0:ACGAGTCT"
+        assert it.next().strip() == "ATGACCCACCAATCGCATGCCTATCATATAGTAAAACCCAGCCCATGACCCCTAACAGGGGCCCTCTCAGCCCTCCTAATGACCTCCGGCCT"
+        assert it.next().strip() == "+"
+        assert it.next().strip() == "FFFFFIIIIIIIIIIIIIIIIIIIIIIIIIIIIIBFIIIIIIIIIIIFIIIIIFFFFFFFFFFFFFFBBBBFFFFFFFFFFBFFFFB<BFFF"
 
 
 @raises(SystemExit)
@@ -145,3 +179,5 @@ def test_process_bam_raises():
     tbam = os.path.join(DATA, "tmp.bam")
     with captured_output() as (o, e):
         process_bam(bam, tbam)
+    if os.path.exists(tbam):
+        os.remove(tbam)

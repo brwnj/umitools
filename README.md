@@ -13,6 +13,12 @@ processing mapped reads.
 umitools trim --end 5 unprocessed_fastq NNNNNV > out.fq
 ```
 
+If you want to save reads with invalid UMI sequences, you can specify `--invalid`.
+
+```
+umitools trim --end 5 --invalid bad_umi.fq unprocessed_fastq NNNNNV > out.fq
+```
+
 ## Remove Duplicates
 
 For any given start site, save only one read per UMI. Writes bed3+ to stdout
