@@ -373,7 +373,7 @@ def main():
 
     args = p.parse_args()
     if args.command == 'trim':
-        process_fastq(args.fastq, args.umi, end=args.end, invalid=invalid,
+        process_fastq(args.fastq, args.umi, end=args.end, invalid=args.invalid,
                       verbose=args.verbose, top=args.top)
     elif args.command == 'rmdup':
         process_bam(args.abam, args.bbam, mismatches=args.mismatches)
