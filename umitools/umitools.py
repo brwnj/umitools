@@ -244,12 +244,11 @@ def valid_umi(iupac, umi):
     return True
 
 
-def clip_umi(record, iupac_umi, n, end):
+def clip_umi(record, n, end):
     """Removes UMI sequence from read, trims respective length from qual, then appends UMI onto read name.
 
     Args:
         record (Fastq): `Fastq` record
-        iupac_umi (str): IUPAC sequence of the UMI
         n (int): Length of the UMI
         end (int): The end of the read on which the UMI resides
 
@@ -257,17 +256,17 @@ def clip_umi(record, iupac_umi, n, end):
         Fastq else str: The record or the failed UMI sequence
 
     >>> fq = Fastq(["@cluster_455 2","GGGGGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
-    >>> r = clip_umi(fq, "NNNNNV", 6, 5)
+    >>> r, umi = clip_umi(fq, 6, 5)
     >>> r
     Fastq(cluster_455:UMI_GGGGGA 2)
     >>> r.seq
     'GCCACGAGGTGTGTTTTATTTTCATTATTC'
     >>> fq = Fastq(["@cluster_455 2","GGXXGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
-    >>> r = clip_umi(fq, "NNNNNV", 6, 5)
-    >>> r
+    >>> r, umi = clip_umi(fq, 6, 5)
+    >>> umi
     'GGXXGA'
     >>> fq = Fastq(["@cluster_455 2","GGXXGAGCCACGAGGTGTGTTTTATTTTCATTATTC","+","C===>=B=@:<;4A;8=9?6EEC0?DDA72B@3EB4"])
-    >>> r = clip_umi(fq, "NNNNN", 5, 3)
+    >>> r, umi = clip_umi(fq, 5, 3)
     >>> r.seq
     'GGXXGAGCCACGAGGTGTGTTTTATTTTCAT'
     >>> r.qual
@@ -281,36 +280,45 @@ def clip_umi(record, iupac_umi, n, end):
         umi = record.seq[-n:]
         record.seq = record.seq[:-n]
         record.qual = record.qual[:-n]
-    if not valid_umi(iupac_umi, umi):
-        return umi
     try:
         name, pair = record.name.split(" ", 1)
         record.name = "{name}:UMI_{umi} {pair}".format(name=name, umi=umi, pair=pair)
     except ValueError:
         record.name = "{name}:UMI_{umi}".format(name=record.name, umi=umi)
-    return record
+    return record, umi
 
 
-def process_fastq(fastq, umi, end=5, verbose=False, top=10):
+def process_fastq(fastq, umi, end=5, invalid=None, verbose=False, top=10):
     """For every valid umi, trim while incorporating UMI into read name.
 
     Args:
         fastq (str): file path to unprocessed FASTQ file
         umi (str): IUPAC sequence of UMI
         end (Optional[int]): 5 or 3, which ever end you're UMI is located on
+        invalid (Optional[str]): file path to save invalid, non-passing reads
         verbose (Optional[bool]): True prints basic stats on observed UMIs
         top (Optional[int]): Number of the the top invalid UMIs to print out
     """
     umi_stats = Counter()
     umi = umi.upper()
     u_leng = len(umi)
-    with gzopen(fastq) as fq:
-        for read in readfq(fq):
-            read = clip_umi(read, umi, u_leng, end)
-            if type(read) is Fastq:
-                print(read)
-            else:
-                umi_stats.update([read])
+    if invalid:
+        with gzopen(fastq) as fq, open(invalid, 'w') as ofh:
+            for read in readfq(fq):
+                read, observed_umi = clip_umi(read, u_leng, end)
+                if not valid_umi(umi, observed_umi):
+                    umi_stats.update([observed_umi])
+                    print(read, file=ofh)
+                else:
+                    print(read)
+    else:
+        with gzopen(fastq) as fq:
+            for read in readfq(fq):
+                read, observed_umi = clip_umi(read, u_leng, end)
+                if not valid_umi(umi, observed_umi):
+                    umi_stats.update([observed_umi])
+                else:
+                    print(read)
     if verbose:
         print("Invalid UMI Total:", sum(umi_stats.values()), file=sys.stderr)
         print("Unique UMIs Removed:", len(list(umi_stats)), file=sys.stderr)
@@ -343,9 +351,11 @@ def main():
                        help='IUPAC UMI sequence, e.g. NNNNNV')
     fastq.add_argument('--end', choices=[5, 3], default=5, type=int,
                        help="UMI location on the read")
+    fastq.add_argument('--invalid', metavar='STR',
+                       help='save invalid, non-passing reads to this file')
     fastq.add_argument('--verbose', action='store_true',
                        help="print UMI stats to stderr")
-    fastq.add_argument('--top', type=int, default=10,
+    fastq.add_argument('--top', metavar='INT', type=int, default=10,
                        help="when verbose, print this many of the top filtered UMI sequences")
 
     # bam processing
@@ -358,12 +368,13 @@ def main():
                      help='bam with UMI in read name')
     bam.add_argument('bbam', metavar='OUTPUT_BAM',
                      help='non-duplicate UMIs at any given start position')
-    bam.add_argument('-m', '--mismatches', default=0, type=int,
+    bam.add_argument('-m', '--mismatches', metavar='INT', default=0, type=int,
                      help="allowable mismatches when comparing UMIs at any given start location")
 
     args = p.parse_args()
     if args.command == 'trim':
-        process_fastq(args.fastq, args.umi, end=args.end, verbose=args.verbose, top=args.top)
+        process_fastq(args.fastq, args.umi, end=args.end, invalid=invalid,
+                      verbose=args.verbose, top=args.top)
     elif args.command == 'rmdup':
         process_bam(args.abam, args.bbam, mismatches=args.mismatches)
 
