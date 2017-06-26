@@ -1,4 +1,4 @@
-#umitools
+# UMI Tools
 
 [![DOI](https://zenodo.org/badge/19296/brwnj/umitools.svg)](https://zenodo.org/badge/latestdoi/19296/brwnj/umitools)
 
